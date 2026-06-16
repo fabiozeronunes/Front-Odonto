@@ -186,7 +186,7 @@ async function connectToWhatsApp() {
       version,
       printQRInTerminal: true,
       auth: state,
-      logger: pino({ level: 'silent' }),
+      logger: pino({ level: 'debug' }),
       browser: ['OdontoAI', 'Chrome', '1.0.0'],
       syncFullHistory: false
     });
@@ -197,7 +197,13 @@ async function connectToWhatsApp() {
       
       if (qr) {
         debugLog("Generating QR Code");
-        qrCode = await QRCode.toDataURL(qr);
+        try {
+          qrCode = await QRCode.toDataURL(qr);
+          debugLog("QR Code generated successfully");
+        } catch (e) {
+          debugLog("QR Code generation error: " + (e as any).message);
+          throw e;
+        }
         connectionStatus = 'qr';
         isConnecting = false;
         broadcast({ type: 'status', status: 'qr', qr: qrCode });
@@ -604,7 +610,7 @@ app.post("/api/wa-connect", async (req, res) => {
   });
 });
 
-app.post("/api/wa-disconnect", (req, res) => {
+app.post("/api/wa-disconnect", async (req, res) => {
   debugLog("Explicit logout requested via /api/wa-disconnect");
   forceDisconnect = true;
   lastHistory = null;
@@ -625,27 +631,26 @@ app.post("/api/wa-disconnect", (req, res) => {
     broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
   };
 
+  // Force-kill the socket connection
   if (sock) {
     try {
-      sock.logout().then(() => {
-        try { sock.end(undefined); } catch(e) {}
-        cleanup();
-      }).catch((e: any) => {
-        debugLog("sock.logout error: " + e.message);
-        try { sock.end(undefined); } catch(err) {}
-        cleanup();
-      });
+      if (sock.ws) sock.ws.terminate();
+      sock.end(undefined);
     } catch(e) {
-      try { sock.end(undefined); } catch(err) {}
-      cleanup();
+      debugLog("Error during aggressive sock termination: " + (e as any).message);
+    }
+  }
+  cleanup();
+
+  if (sock) {
+    try {
+      await sock.logout();
+    } catch(e: any) {
+      debugLog("sock.logout error: " + e.message);
     }
     
-    // Safety fallback: force clear after 2.5s if not executed yet
-    setTimeout(() => {
-      if (sock || fs.existsSync('wa_auth')) {
-        cleanup();
-      }
-    }, 2500);
+    // Safety fallback: force clear after 500ms
+    setTimeout(cleanup, 500);
   } else {
     cleanup();
   }

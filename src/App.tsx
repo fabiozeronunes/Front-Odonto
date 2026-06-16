@@ -616,7 +616,7 @@ export default function App() {
               {activeTab === 'specialties' && <SpecialtyManager />}
               {activeTab === 'procedures' && <ProcedureManager setActiveTab={setActiveTab} />}
               {activeTab === 'patients' && <PatientManager />}
-              {activeTab === 'crm' && <CRM />}
+              {activeTab === 'crm' && <CRM onNavigate={setActiveTab} />}
               {activeTab === 'financial_reports' && <FinancialReports />}
               {activeTab === 'profile' && <Profile onNavigate={setActiveTab} />}
               {activeTab === 'agenda' && <Agenda accessToken={accessToken} onConnectGoogle={handleLogin} onNavigate={setActiveTab} onDisconnectGoogle={() => setAccessToken(null)} syncTrigger={syncTrigger} />}

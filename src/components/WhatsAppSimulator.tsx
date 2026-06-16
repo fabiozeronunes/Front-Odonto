@@ -98,13 +98,33 @@ export default function WhatsAppSimulator() {
     }
   }, [chats]);
 
-  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('wa_active_chat_id');
-    } catch (e) {
-      return null;
+  const [jumpToData, setJumpToData] = useState<{ phone: string; name: string } | null>(() => {
+    const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
+    if (jumpTo) {
+      localStorage.removeItem('wa_whatsapp_jump_to_chat');
+      return JSON.parse(jumpTo);
     }
+    return null;
   });
+
+  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
+    return localStorage.getItem('wa_active_chat_id');
+  });
+
+  useEffect(() => {
+    if (jumpToData) {
+      const { phone, name } = jumpToData;
+      setChats(prev => {
+        if (prev[phone]) return prev;
+        return { 
+          ...prev, 
+          [phone]: { name, lastMessage: 'Início do atendimento', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), messages: [] } 
+        };
+      });
+      setActiveChatId(phone);
+      setJumpToData(null);
+    }
+  }, [chats, jumpToData]);
 
   useEffect(() => {
     try {
@@ -224,6 +244,7 @@ export default function WhatsAppSimulator() {
         const funnelStagesQuery = query(collection(db, 'funnel_stages'), where('ownerId', '==', user.uid));
         unsubFunnelStages = onSnapshot(funnelStagesQuery, async (snapshot) => {
           const loadedStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          console.log("onSnapshot funnel stages:", loadedStages);
           if (loadedStages.length === 0) {
             await seedDefaultStages(user.uid);
           } else {
@@ -639,33 +660,38 @@ export default function WhatsAppSimulator() {
     const stageId = `stage_${Date.now()}`;
     const nextOrder = crmStages.length;
     
+    const newStage = {
+        id: currentUser ? `${currentUser.uid}_${stageId}` : stageId,
+        title: newStageTitle.trim(),
+        color: newStageColor,
+        order: nextOrder
+    };
+
     if (currentUser) {
       try {
-        await setDoc(doc(db, 'funnel_stages', `${currentUser.uid}_${stageId}`), {
-          title: newStageTitle.trim(),
-          color: newStageColor,
-          order: nextOrder,
+        await setDoc(doc(db, 'funnel_stages', newStage.id), {
+          title: newStage.title,
+          color: newStage.color,
+          order: newStage.order,
           ownerId: currentUser.uid,
           createdAt: new Date().toISOString()
         });
       } catch (e) {
         console.error("Erro ao adicionar etapa de funil:", e);
-      }
-    } else {
-      const currentList = crmStages.length > 0 ? crmStages : [...CRM_STAGES];
-      const updatedList = [...currentList, {
-        id: stageId,
-        title: newStageTitle.trim(),
-        color: newStageColor,
-        order: nextOrder
-      }];
-      setCrmStages(updatedList);
-      try {
-        localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(updatedList));
-      } catch (e) {
-        console.error("Erro ao salvar wa_crm_funnel_stages localmente:", e);
+        return;
       }
     }
+
+    setCrmStages(prev => [...prev, newStage]);
+    
+    try {
+        const currentList = [...crmStages, newStage];
+        localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(currentList));
+    } catch (e) {
+        console.error("Erro ao salvar wa_crm_funnel_stages localmente:", e);
+    }
+
+    setStageModalOpen(false);
     setNewStageTitle('');
     setIsStageModalOpen(false);
   };
@@ -1369,15 +1395,47 @@ export default function WhatsAppSimulator() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1">
-                          {(crmStages.length > 0 ? crmStages : CRM_STAGES).map((stg) => {
+                          {crmStages.map((stg, colIdx) => {
                             const isCurrentStatus = matchedPatient?.status === stg.id || (matchedPatient?.status && (matchedPatient.status.endsWith(`_${stg.id}`) || stg.id.endsWith(`_${matchedPatient.status}`)));
                             const stageBgColor = getBgColorClass(stg.color);
                             
                             return (
                               <div
                                 key={stg.id}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.dataTransfer.setData('text/plain', `stage_${colIdx}`);
+                                }}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    const data = e.dataTransfer.getData('text/plain');
+                                    if (!data.startsWith('stage_')) return;
+                                    const sourceIdx = parseInt(data.replace('stage_', ''), 10);
+                                    if (isNaN(sourceIdx) || sourceIdx === colIdx) return;
+                                    
+                                    const reordered = [...crmStages];
+                                    const [moved] = reordered.splice(sourceIdx, 1);
+                                    reordered.splice(colIdx, 0, moved);
+                                    
+                                    setCrmStages(reordered);
+                                    
+                                    // Save update order
+                                    try {
+                                        localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(reordered));
+                                    } catch (e) {
+                                        console.error("Erro ao salvar ordem no localStorage:", e);
+                                    }
+                                    
+                                    // Also update order in Firestore
+                                    if (currentUser) {
+                                        reordered.forEach((stage, idx) => {
+                                            updateDoc(doc(db, 'funnel_stages', stage.id), { order: idx }).catch(console.error);
+                                        });
+                                    }
+                                }}
                                 className={`
-                                  group relative flex items-center justify-between p-1 rounded-xl border transition-all
+                                  group relative flex items-center justify-between p-1 rounded-xl border transition-all cursor-move
                                   ${isCurrentStatus 
                                     ? 'bg-[#128C7E]/5 border-[#128C7E] shadow-sm' 
                                     : 'bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50'}

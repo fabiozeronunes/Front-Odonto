@@ -12,7 +12,7 @@ import {
   User
 } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { Patient, Clinic } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/FirestoreUtils';
 
@@ -23,11 +23,13 @@ const columns = [
   { id: 'lost', title: 'Perdidos', color: 'bg-neutral-400' },
 ];
 
-export default function CRM() {
+export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void }) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isStageModalOpen, setIsStageModalOpen] = useState(false);
+  const [newStageTitle, setNewStageTitle] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   
   // Dynamic stages state with localStorage loading
@@ -39,6 +41,12 @@ export default function CRM() {
       return columns;
     }
   });
+
+  const updateStages = (newStages: any[]) => {
+    setStages(newStages);
+    localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(newStages));
+    // Optionally sync with firestore if needed, but the requirement is to fix persistence
+  };
 
   const getBgColorClass = (colorStr: string) => {
     if (!colorStr) return 'bg-blue-500';
@@ -78,7 +86,8 @@ export default function CRM() {
     const [moved] = reordered.splice(sourceIdx, 1);
     reordered.splice(targetIndex, 0, moved);
     
-    setStages(reordered);
+    // Update state to force re-render
+    updateStages([...reordered]);
     setDraggedStageIdx(null);
 
     // Save locally
@@ -154,6 +163,19 @@ export default function CRM() {
     return ptStatus === columnId || columnId.endsWith(`_${ptStatus}`) || ptStatus.endsWith(`_${columnId}`);
   };
 
+  const addStage = () => {
+    if (!newStageTitle.trim()) return;
+    const newStage = {
+        id: `stage_${Date.now()}`,
+        title: newStageTitle.trim(),
+        color: 'bg-neutral-500',
+        order: stages.length
+    };
+    updateStages([...stages, newStage]);
+    setIsStageModalOpen(false);
+    setNewStageTitle('');
+  };
+
   // Form State
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', clinicId: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -183,7 +205,10 @@ export default function CRM() {
 
         const q = query(collection(db, 'pacientes'));
         unsubPacientes = onSnapshot(q, (ptSnapshot) => {
-          setPatients(ptSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Patient)));
+          setPatients(ptSnapshot.docs.map(d => {
+            const data = d.data();
+            return { id: d.id, ...data, status: data.status || 'lead' } as Patient;
+          }));
           setLoading(false);
         }, (error) => {
           console.error("Error loading pacientes in CRM:", error);
@@ -206,14 +231,9 @@ export default function CRM() {
           });
           if (loadedStages.length > 0) {
             loadedStages.sort((a, b) => a.order - b.order);
-            setStages(loadedStages);
-            try {
-              localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(loadedStages));
-            } catch (e) {
-              console.error("Erro ao salvar wa_crm_funnel_stages localmente:", e);
-            }
+            updateStages(loadedStages);
           } else {
-            setStages(columns);
+            updateStages(columns);
           }
         });
       } else {
@@ -222,12 +242,12 @@ export default function CRM() {
         try {
           const saved = localStorage.getItem('wa_crm_funnel_stages');
           if (saved) {
-            setStages(JSON.parse(saved));
+            updateStages(JSON.parse(saved));
           } else {
-            setStages(columns);
+            updateStages(columns);
           }
         } catch (e) {
-          setStages(columns);
+          updateStages(columns);
         }
         setLoading(false);
       }
@@ -249,6 +269,27 @@ export default function CRM() {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `patients/${patientId}`);
+    }
+  };
+
+  const handleDeleteLead = async (e: React.MouseEvent, patientId: string) => {
+    e.stopPropagation();
+    
+    if (!patientId) {
+      console.error("Patient ID is missing!");
+      return;
+    }
+
+    if (!confirm("Tem certeza que deseja excluir este lead?")) return;
+    
+    // Immediate local update for better UX, also cleaning up any falsy records
+    setPatients(prev => prev.filter(p => p && p.id && p.id !== patientId));
+
+    try {
+      await deleteDoc(doc(db, 'pacientes', patientId));
+    } catch (error) {
+      console.error("Error deleting lead from Firestore:", error);
+      alert("Erro ao excluir do banco de dados.");
     }
   };
 
@@ -280,7 +321,7 @@ export default function CRM() {
   };
 
   const filteredPatients = patients.filter(p => 
-    (p.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+    p && (p.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
     (p.phone || '').includes(searchTerm || '')
   );
 
@@ -303,6 +344,13 @@ export default function CRM() {
             Filtros
           </button>
           <button 
+            onClick={() => setIsStageModalOpen(true)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-neutral-100 border border-neutral-200 rounded-xl text-neutral-600 hover:bg-neutral-200 font-bold transition-all text-sm"
+          >
+            <Plus size={18} />
+            Nova Etapa
+          </button>
+          <button 
             onClick={() => setIsModalOpen(true)}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/20 text-sm"
           >
@@ -317,13 +365,14 @@ export default function CRM() {
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="flex gap-6 overflow-x-auto pb-6 -mx-4 px-4 sm:mx-0 sm:px-0 flex-nowrap select-none min-h-[600px]">
+        <div className="flex gap-6 pb-6 -mx-4 px-4 sm:mx-0 sm:px-0 flex-wrap select-none min-h-[600px]">
           {stages.map((column, colIdx) => (
-            <div 
+            <motion.div 
+              layout
               key={column.id} 
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
-              className="space-y-4 shrink-0 w-[290px] sm:w-[320px] transition-all duration-200 border border-transparent rounded-2xl p-1"
+              className="space-y-4 shrink-0 w-[290px] sm:w-[320px] transition-all duration-300 border border-transparent rounded-2xl p-1"
             >
               <div 
                 draggable
@@ -345,7 +394,7 @@ export default function CRM() {
                 onDrop={(e) => handleDropPatient(e, column.id)}
                 className="bg-neutral-100/50 p-3 rounded-2xl min-h-[500px] space-y-3 border border-dashed border-neutral-200 hover:bg-neutral-100/80 transition-all duration-150"
               >
-                {filteredPatients.filter(p => isMatchStage(p.status, column.id)).map((patient, idx) => (
+                {filteredPatients.filter(p => p && p.status && isMatchStage(p.status, column.id)).map((patient, idx) => (
                   <div 
                     key={`${patient.id}-${idx}`} 
                     draggable
@@ -354,7 +403,7 @@ export default function CRM() {
                   >
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <h5 className="font-bold text-neutral-800 text-xs sm:text-sm">{patient.name}</h5>
+                        <h5 className="font-bold text-neutral-800 text-xs sm:sm">{patient.name}</h5>
                         <p className="text-[10px] text-neutral-400 font-medium">{patient.phone}</p>
                       </div>
                       <div className="flex gap-1">
@@ -393,7 +442,17 @@ export default function CRM() {
 
                     <div className="flex items-center justify-between pt-3 border-t border-neutral-50">
                       <div className="flex -space-x-2">
-                        <button className="p-1.5 rounded-full bg-neutral-50 text-neutral-400 hover:text-blue-500 hover:bg-blue-50 transition-colors border-2 border-white">
+                        <button 
+                          onClick={() => {
+                            if (patient.phone) {
+                              const cleanPhone = patient.phone.replace(/\D/g, '');
+                              const jid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
+                              localStorage.setItem('wa_whatsapp_jump_to_chat', JSON.stringify({ phone: jid, name: patient.name }));
+                              onNavigate('whatsapp');
+                            }
+                          }}
+                          className="p-1.5 rounded-full bg-neutral-50 text-neutral-400 hover:text-blue-500 hover:bg-blue-50 transition-colors border-2 border-white"
+                        >
                           <MessageCircle size={14} />
                         </button>
                         <button className="p-1.5 rounded-full bg-neutral-50 text-neutral-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors border-2 border-white">
@@ -403,16 +462,22 @@ export default function CRM() {
                       <span className="text-[9px] text-neutral-400 font-bold uppercase">
                         {patient.lastContactAt ? 'Ativo' : 'Novo'}
                       </span>
+                      <button 
+                        onClick={(e) => handleDeleteLead(e, patient.id)}
+                        className="text-[9px] text-red-500 hover:text-red-700 underline font-bold uppercase"
+                      >
+                        Excluir
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modal Lead */}
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -492,6 +557,41 @@ export default function CRM() {
                   {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : 'Cadastrar Lead'}
                 </button>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Stage */}
+      <AnimatePresence>
+        {isStageModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsStageModalOpen(false)}
+              className="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6"
+            >
+              <h3 className="text-lg font-bold mb-4">Adicionar Etapa</h3>
+              <input 
+                autoFocus
+                type="text" 
+                placeholder="Título da etapa"
+                className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-2xl mb-4"
+                value={newStageTitle}
+                onChange={(e) => setNewStageTitle(e.target.value)}
+              />
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setIsStageModalOpen(false)} className="px-4 py-2 bg-neutral-100 rounded-xl">Cancelar</button>
+                <button onClick={addStage} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold">Salvar</button>
+              </div>
             </motion.div>
           </div>
         )}
