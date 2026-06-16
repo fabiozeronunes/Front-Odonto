@@ -1,0 +1,11 @@
+{
+  "name": "Front Odonto AI",
+  "description": "Plataforma completa de gestão odontológica com assistente de IA para WhatsApp, integração com Google Calendar e funis de marketing automatizados.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
