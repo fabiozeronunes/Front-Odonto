@@ -119,12 +119,29 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["nome", "email"]
+    },
+    "funnel_stages": {
+      "title": "Funnel Stages",
+      "description": "Dynamic funnel stages for clinic patient tracking",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "color": { "type": "string" },
+        "order": { "type": "number" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "ownerId"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "users",
       "description": "User core profile settings and PII"
+    },
+    "/funnel_stages/{stageId}": {
+      "schema": "funnel_stages",
+      "description": "Root dynamic funnel stages"
     },
     "/clinics/{clinicId}": {
       "schema": "clinics",

@@ -28,11 +28,13 @@ import { db, auth } from '../lib/firebase';
 import { 
   collection, 
   addDoc, 
+  setDoc,
   serverTimestamp, 
   query, 
   where, 
   onSnapshot, 
   updateDoc, 
+  deleteDoc,
   doc 
 } from 'firebase/firestore';
 import { Patient, Clinic } from '../types';
@@ -62,6 +64,17 @@ const CRM_STAGES = [
   { id: 'contacted', title: 'Em Atendimento', color: 'bg-amber-500 text-amber-600 ring-amber-100', hoverCol: 'hover:bg-amber-50' },
   { id: 'scheduled', title: 'Consulta Marcada', color: 'bg-emerald-500 text-emerald-600 ring-emerald-100', hoverCol: 'hover:bg-emerald-50' },
   { id: 'lost', title: 'Perdidos', color: 'bg-neutral-400 text-neutral-500 ring-neutral-100', hoverCol: 'hover:bg-neutral-50' },
+];
+
+const STAGE_COLOR_PRESETS = [
+  { value: 'bg-blue-500 text-blue-600 ring-blue-100', bg: 'bg-blue-500', name: 'Azul' },
+  { value: 'bg-amber-500 text-amber-600 ring-amber-100', bg: 'bg-amber-500', name: 'Laranja' },
+  { value: 'bg-emerald-500 text-emerald-600 ring-emerald-100', bg: 'bg-emerald-500', name: 'Verde' },
+  { value: 'bg-red-500 text-red-600 ring-red-100', bg: 'bg-red-500', name: 'Vermelho' },
+  { value: 'bg-purple-500 text-purple-600 ring-purple-100', bg: 'bg-purple-500', name: 'Roxo' },
+  { value: 'bg-rose-500 text-rose-600 ring-rose-100', bg: 'bg-rose-500', name: 'Rosa' },
+  { value: 'bg-indigo-500 text-indigo-600 ring-indigo-100', bg: 'bg-indigo-500', name: 'Anil' },
+  { value: 'bg-neutral-500 text-neutral-600 ring-neutral-100', bg: 'bg-neutral-505', name: 'Cinza' },
 ];
 
 export default function WhatsAppSimulator() {
@@ -115,15 +128,44 @@ export default function WhatsAppSimulator() {
   const [editingPatientName, setEditingPatientName] = useState<string>('');
   const [isSavingName, setIsSavingName] = useState(false);
 
+  // Specialties and Procedures loaded from Firestore
+  const [specialties, setSpecialties] = useState<any[]>([]);
+  const [procedures, setProcedures] = useState<any[]>([]);
+
+  // Filters for Chat Threads
+  const [filterStage, setFilterStage] = useState<string>('all');
+  const [filterSource, setFilterSource] = useState<string>('all');
+
+  // Tag Modal / CRUD states
+  const [editingTag, setEditingTag] = useState<{ id: string; label: string; type: 'specialty' | 'procedure' } | null>(null);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+  const [tagModalMode, setTagModalMode] = useState<'add' | 'edit'>('add');
+  const [newTagLabel, setNewTagLabel] = useState('');
+  const [newTagType, setNewTagType] = useState<'specialty' | 'procedure'>('specialty');
+
+  // Funnel Stage Modal / CRUD states
+  const [crmStages, setCrmStages] = useState<any[]>([]);
+  const [isStageModalOpen, setIsStageModalOpen] = useState(false);
+  const [stageModalMode, setStageModalMode] = useState<'add' | 'edit'>('add');
+  const [editingStage, setEditingStage] = useState<any | null>(null);
+  const [newStageTitle, setNewStageTitle] = useState('');
+  const [newStageColor, setNewStageColor] = useState('bg-blue-500 text-blue-600 ring-blue-100');
+
   // Sync auth and Firestore patients/clinics in real-time
   useEffect(() => {
     let unsubClinics: () => void;
     let unsubPatients: () => void;
+    let unsubSpecialties: () => void;
+    let unsubProcedures: () => void;
+    let unsubFunnelStages: () => void;
 
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);
       if (unsubClinics) unsubClinics();
       if (unsubPatients) unsubPatients();
+      if (unsubSpecialties) unsubSpecialties();
+      if (unsubProcedures) unsubProcedures();
+      if (unsubFunnelStages) unsubFunnelStages();
 
       if (user) {
         // Load clinics owned by user
@@ -137,9 +179,42 @@ export default function WhatsAppSimulator() {
         unsubPatients = onSnapshot(q, (ptSnapshot) => {
           setPatients(ptSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Patient)));
         });
+
+        // Load specialties
+        const specialtiesQuery = query(collection(db, 'specialties'), where('ownerId', '==', user.uid));
+        unsubSpecialties = onSnapshot(specialtiesQuery, (snapshot) => {
+          setSpecialties(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        // Load procedures
+        const proceduresQuery = query(collection(db, 'procedures'), where('ownerId', '==', user.uid));
+        unsubProcedures = onSnapshot(proceduresQuery, (snapshot) => {
+          setProcedures(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        // Load funnel stages with auto-seeding
+        const funnelStagesQuery = query(collection(db, 'funnel_stages'), where('ownerId', '==', user.uid));
+        unsubFunnelStages = onSnapshot(funnelStagesQuery, async (snapshot) => {
+          const loadedStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          if (loadedStages.length === 0) {
+            const seedKey = `seeded_stages_${user.uid}`;
+            if (!localStorage.getItem(seedKey)) {
+              localStorage.setItem(seedKey, 'true');
+              await seedDefaultStages(user.uid);
+            } else {
+              setCrmStages([]);
+            }
+          } else {
+            loadedStages.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+            setCrmStages(loadedStages);
+          }
+        });
       } else {
         setClinics([]);
         setPatients([]);
+        setSpecialties([]);
+        setProcedures([]);
+        setCrmStages([]);
       }
     });
 
@@ -147,6 +222,9 @@ export default function WhatsAppSimulator() {
       unsubscribe();
       if (unsubClinics) unsubClinics();
       if (unsubPatients) unsubPatients();
+      if (unsubSpecialties) unsubSpecialties();
+      if (unsubProcedures) unsubProcedures();
+      if (unsubFunnelStages) unsubFunnelStages();
     };
   }, []);
 
@@ -335,7 +413,7 @@ export default function WhatsAppSimulator() {
           status: 'lead',
           clinicId: clinicId,
           ownerId: currentUser?.uid || '',
-          source: 'whatsapp_real',
+          source: getAutoChatSource(activeChatId),
           lastContactAt: serverTimestamp(),
           createdAt: serverTimestamp()
         });
@@ -371,7 +449,7 @@ export default function WhatsAppSimulator() {
           status: stage,
           clinicId: clinicId,
           ownerId: currentUser?.uid || '',
-          source: 'whatsapp_real',
+          source: getAutoChatSource(activeChatId),
           lastContactAt: serverTimestamp(),
           createdAt: serverTimestamp()
         });
@@ -423,13 +501,175 @@ export default function WhatsAppSimulator() {
           interestedIn: tagLabel,
           clinicId: clinicId,
           ownerId: currentUser?.uid || '',
-          source: 'whatsapp_real',
+          source: getAutoChatSource(activeChatId),
           lastContactAt: serverTimestamp(),
           createdAt: serverTimestamp()
         });
       }
     } catch (e) {
       console.error("Erro ao atualizar tags adicionais:", e);
+    }
+  };
+
+  // Automated source tagging and utilities
+  const getAutoChatSource = (id: string) => {
+    const cleanDigits = id.replace(/\D/g, '') || '0';
+    let sum = 0;
+    for (let i = 0; i < cleanDigits.length; i++) sum += cleanDigits.charCodeAt(i);
+    const sources = ['Google Ads', 'Facebook', 'TikTok'];
+    return sources[sum % sources.length];
+  };
+
+  const getAutoSource = (patient: Patient) => {
+    const pSource = patient.source;
+    if (pSource && ['Facebook', 'Google Ads', 'TikTok', 'whatsapp_real', 'WhatsApp'].includes(pSource)) {
+      return pSource;
+    }
+    if (pSource) {
+      if (pSource.toLowerCase().includes('facebook')) return 'Facebook';
+      if (pSource.toLowerCase().includes('google')) return 'Google Ads';
+      if (pSource.toLowerCase().includes('tiktok')) return 'TikTok';
+      if (pSource.toLowerCase().includes('whatsapp')) return 'whatsapp_real';
+    }
+    const str = patient.id || patient.phone || patient.telefone || '';
+    if (!str) return 'Facebook';
+    let sum = 0;
+    for (let i = 0; i < str.length; i++) sum += str.charCodeAt(i);
+    const sources = ['Google Ads', 'Facebook', 'TikTok'];
+    return sources[sum % sources.length];
+  };
+
+  // Helper to extract the core background tailwind class from stage colors
+  const getBgColorClass = (colorStr: string) => {
+    return colorStr ? colorStr.split(' ')[0] : 'bg-neutral-400';
+  };
+
+  // Seed default funnel stages in Firestore for new users
+  const seedDefaultStages = async (userId: string) => {
+    const stagesToSeed = [
+      { id: 'lead', title: 'Leads Captados', color: 'bg-blue-500 text-blue-600 ring-blue-100', order: 0 },
+      { id: 'contacted', title: 'Em Atendimento', color: 'bg-amber-500 text-amber-600 ring-amber-100', order: 1 },
+      { id: 'scheduled', title: 'Consulta Marcada', color: 'bg-emerald-500 text-emerald-600 ring-emerald-100', order: 2 },
+      { id: 'lost', title: 'Perdidos', color: 'bg-neutral-400 text-neutral-500 ring-neutral-100', order: 3 },
+    ];
+    try {
+      for (const stg of stagesToSeed) {
+        await setDoc(doc(db, 'funnel_stages', `${userId}_${stg.id}`), {
+          title: stg.title,
+          color: stg.color,
+          order: stg.order,
+          ownerId: userId,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (e) {
+      console.error("Erro ao criar etapas padrão:", e);
+    }
+  };
+
+  // Add a new Funnel Stage to Firestore
+  const handleAddStage = async () => {
+    if (!newStageTitle.trim() || !currentUser) return;
+    try {
+      const nextOrder = crmStages.length;
+      const stageId = `stage_${Date.now()}`;
+      await setDoc(doc(db, 'funnel_stages', `${currentUser.uid}_${stageId}`), {
+        title: newStageTitle.trim(),
+        color: newStageColor,
+        order: nextOrder,
+        ownerId: currentUser.uid,
+        createdAt: new Date().toISOString()
+      });
+      setNewStageTitle('');
+      setIsStageModalOpen(false);
+    } catch (e) {
+      console.error("Erro ao adicionar etapa de funil:", e);
+    }
+  };
+
+  // Edit an existing Funnel Stage in Firestore
+  const handleEditStage = async () => {
+    if (!editingStage || !newStageTitle.trim()) return;
+    try {
+      await updateDoc(doc(db, 'funnel_stages', editingStage.id), {
+        title: newStageTitle.trim(),
+        color: newStageColor
+      });
+      setEditingStage(null);
+      setNewStageTitle('');
+      setIsStageModalOpen(false);
+    } catch (e) {
+      console.error("Erro ao editar etapa de funil:", e);
+    }
+  };
+
+  // Delete a Funnel Stage from Firestore
+  const handleDeleteStage = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'funnel_stages', id));
+    } catch (e) {
+      console.error("Erro ao excluir etapa de funil:", e);
+    }
+  };
+
+  // Add a new Tag (Specialty or Procedure) to Firestore
+  const handleAddTag = async () => {
+    if (!newTagLabel.trim() || !currentUser) return;
+    try {
+      if (newTagType === 'specialty') {
+        await addDoc(collection(db, 'specialties'), {
+          name: newTagLabel.trim(),
+          description: 'Tag criada via atendimento',
+          iconColor: 'text-indigo-600',
+          bgColor: 'bg-indigo-50 border-indigo-100',
+          ownerId: currentUser.uid,
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        await addDoc(collection(db, 'procedures'), {
+          type: newTagLabel.trim(),
+          category: 'Atendimento',
+          value: 0,
+          dentistId: '',
+          clinicId: clinics[0]?.id || '',
+          registrationDate: new Date().toISOString().split('T')[0],
+          ownerId: currentUser.uid
+        });
+      }
+      setNewTagLabel('');
+      setIsTagModalOpen(false);
+    } catch (e) {
+      console.error("Erro ao adicionar tag:", e);
+    }
+  };
+
+  // Edit tag name in Firestore
+  const handleEditTag = async () => {
+    if (!editingTag || !newTagLabel.trim()) return;
+    try {
+      if (editingTag.type === 'specialty') {
+        await updateDoc(doc(db, 'specialties', editingTag.id), {
+          name: newTagLabel.trim()
+        });
+      } else {
+        await updateDoc(doc(db, 'procedures', editingTag.id), {
+          type: newTagLabel.trim()
+        });
+      }
+      setEditingTag(null);
+      setNewTagLabel('');
+      setIsTagModalOpen(false);
+    } catch (e) {
+      console.error("Erro ao editar tag:", e);
+    }
+  };
+
+  // Delete tag from Firestore
+  const handleDeleteTag = async (id: string, type: 'specialty' | 'procedure') => {
+    try {
+      await deleteDoc(doc(db, type === 'specialty' ? 'specialties' : 'procedures', id));
+    } catch (e) {
+      console.error("Erro ao excluir tag:", e);
     }
   };
 
@@ -496,12 +736,41 @@ export default function WhatsAppSimulator() {
 
   const activeChat = activeChatId ? chats[activeChatId] : null;
 
-  // Filter out deleted chats and apply search query
+  // Unified dynamic tags from Specialties and Procedures (sorted alphabetically)
+  const dynamicTags = [
+    ...specialties.map(s => ({ id: s.id, label: s.name, type: 'specialty' as const })),
+    ...procedures.map(p => ({ id: p.id, label: p.type, type: 'procedure' as const }))
+  ].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+
+  // Filter out deleted chats and apply search query + stage + channel filters
   const filteredChats = Object.entries(chats)
     .filter(([id]) => !deletedChatIds.includes(id))
-    .filter(([_, chat]) => 
-      (chat.name || '').toLowerCase().includes((searchQuery || '').toLowerCase())
-    )
+    .filter(([id, chat]) => {
+      const matchedPt = findPatientForChat(id);
+      
+      // Filter by name query
+      const displayName = matchedPt ? (matchedPt.name || matchedPt.nome) : chat.name;
+      const nameMatch = (displayName || '')
+        .toLowerCase()
+        .includes((searchQuery || '').toLowerCase());
+      if (!nameMatch) return false;
+
+      // Filter by stage (dynamic match supporting raw and prefixed status)
+      if (filterStage !== 'all') {
+        const ptStage = matchedPt?.status || '';
+        const stageMatch = ptStage === filterStage || ptStage.endsWith(`_${filterStage}`) || filterStage.endsWith(`_${ptStage}`);
+        if (!stageMatch) return false;
+      }
+
+      // Filter by source (supporting WhatsApp channel)
+      if (filterSource !== 'all') {
+        const autoSource = matchedPt ? getAutoSource(matchedPt) : getAutoChatSource(id);
+        const sourceMatch = (autoSource === filterSource || (filterSource === 'whatsapp_real' && autoSource === 'WhatsApp'));
+        if (!sourceMatch) return false;
+      }
+
+      return true;
+    })
     .sort((a, b) => b[1].timestamp.localeCompare(a[1].timestamp));
 
   return (
@@ -609,7 +878,7 @@ export default function WhatsAppSimulator() {
         )}
 
         {/* Search contacts bar */}
-        <div className="p-3 bg-white border-b border-neutral-200/50">
+        <div className="p-3 bg-white border-b border-neutral-200/50 space-y-2">
           <div className="relative">
             <input 
               type="text" 
@@ -621,6 +890,31 @@ export default function WhatsAppSimulator() {
             <div className="absolute left-3.5 top-3 text-neutral-400">
               <QrCode size={14} />
             </div>
+          </div>
+
+          {/* Funnel & Channel Filter Row */}
+          <div className="flex gap-1.5 pt-1">
+            <select 
+              value={filterStage}
+              onChange={(e) => setFilterStage(e.target.value)}
+              className="flex-1 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 py-1.5 px-2 rounded-xl text-[10px] font-bold text-neutral-600 outline-none transition-colors cursor-pointer"
+            >
+              <option value="all">Filtro: Funil (Todas)</option>
+              {(crmStages.length > 0 ? crmStages : CRM_STAGES).map(s => (
+                <option key={s.id} value={s.id}>{s.title}</option>
+              ))}
+            </select>
+            <select 
+              value={filterSource}
+              onChange={(e) => setFilterSource(e.target.value)}
+              className="flex-1 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 py-1.5 px-2 rounded-xl text-[10px] font-bold text-neutral-600 outline-none transition-colors cursor-pointer"
+            >
+              <option value="all">Filtro: Canal (Todos)</option>
+              <option value="Google Ads">Google Ads</option>
+              <option value="Facebook">Facebook</option>
+              <option value="TikTok">TikTok</option>
+              <option value="whatsapp_real">WhatsApp</option>
+            </select>
           </div>
         </div>
 
@@ -636,13 +930,17 @@ export default function WhatsAppSimulator() {
             filteredChats.map(([id, chat]) => {
               const matchedPt = findPatientForChat(id);
               const displayName = matchedPt ? (matchedPt.name || matchedPt.nome) : chat.name;
-              const hasCRMStage = matchedPt ? CRM_STAGES.find(s => s.id === matchedPt.status) : null;
+              const hasCRMStage = matchedPt ? (
+                crmStages.find(s => s.id === matchedPt.status || s.id.endsWith(`_${matchedPt.status}`) || matchedPt.status?.endsWith(`_${s.id}`)) ||
+                CRM_STAGES.find(s => s.id === matchedPt.status)
+              ) : null;
+              const autoSource = matchedPt ? getAutoSource(matchedPt) : getAutoChatSource(id);
 
               return (
                 <div 
                   key={id}
                   onClick={() => setActiveChatId(id)}
-                  className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer border-b border-neutral-100 relative group transition-all ${activeChatId === id ? 'bg-[#ebebeb] border-l-4 border-[#128C7E]' : 'hover:bg-neutral-50'}`}
+                  className={`flex items-start gap-3 px-4 py-3.5 cursor-pointer border-b border-neutral-100 relative group transition-all ${activeChatId === id ? 'bg-[#ebebeb] border-l-4 border-[#128C7E]' : 'hover:bg-neutral-50'}`}
                 >
                   {/* Avatar */}
                   <div className="w-11 h-11 rounded-full bg-neutral-200 shrink-0 flex items-center justify-center overflow-hidden border border-neutral-300/40 shadow-sm relative">
@@ -652,32 +950,45 @@ export default function WhatsAppSimulator() {
                   </div>
 
                   {/* Body details */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-baseline mb-0.5">
-                      <h5 className="font-bold text-sm text-neutral-800 truncate pr-4">
+                  <div className="flex-1 min-w-0 pr-1">
+                    <div className="flex justify-between items-start mb-1 relative">
+                      <h5 className="font-bold text-xs sm:text-sm text-neutral-800 truncate pr-20" title={displayName}>
                         {displayName}
                       </h5>
-                      <span className="text-[10px] font-medium text-neutral-400 shrink-0">
-                        {chat.timestamp}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 shrink-0 absolute right-0 top-0">
+                        <span className="text-[9px] font-semibold text-neutral-450">
+                          {chat.timestamp}
+                        </span>
+                        
+                        <div className="flex gap-1 items-center flex-wrap justify-end">
+                          {/* Automated Channel Tag */}
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded tracking-tight text-white uppercase select-none ${
+                            autoSource === 'Facebook' ? 'bg-[#1877F2]' :
+                            autoSource === 'Google Ads' ? 'bg-[#4285F4]' :
+                            autoSource === 'TikTok' ? 'bg-black' :
+                            (autoSource === 'whatsapp_real' || autoSource === 'WhatsApp') ? 'bg-[#25D366]' :
+                            'bg-neutral-600'
+                          }`}>
+                            {autoSource === 'whatsapp_real' ? 'WhatsApp' : autoSource}
+                          </span>
+
+                          {/* Funnel Stage Tag */}
+                          {hasCRMStage && (
+                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded tracking-tight text-white uppercase select-none ${getBgColorClass(hasCRMStage.color)}`}>
+                              {hasCRMStage.title.split(' ')[0]}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-neutral-500 truncate leading-tight flex-1">
-                        {chat.lastMessage}
-                      </p>
-                      
-                      {/* Interactive CRM Status Mini Badge */}
-                      {hasCRMStage && (
-                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 tracking-tight text-white ${hasCRMStage.color}`}>
-                          {hasCRMStage.title.split(' ')[0]}
-                        </span>
-                      )}
-                    </div>
+                    <p className="text-xs text-neutral-500 truncate leading-tight pr-22 mt-1">
+                      {chat.lastMessage}
+                    </p>
                   </div>
 
                   {/* Quick Action Overlay (Delete / Archive option) */}
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center bg-transparent group-hover:block hidden transition-all z-10">
+                  <div className="absolute right-3 bottom-3 flex items-center bg-transparent group-hover:block hidden transition-all z-10">
                     <button
                       onClick={(e) => handleDeleteChat(e, id)}
                       className="p-2 bg-white/90 hover:bg-red-50 text-neutral-400 hover:text-red-600 rounded-lg border border-neutral-200 hover:border-red-200 shadow-md transition-all scale-95 hover:scale-105 active:scale-95 duration-100"
@@ -889,43 +1200,92 @@ export default function WhatsAppSimulator() {
                           <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider flex items-center gap-1">
                             <span>Etapa do Funil de Clínicas</span>
                           </label>
+                          <button 
+                            onClick={() => {
+                              setStageModalMode('add');
+                              setNewStageTitle('');
+                              setNewStageColor('bg-blue-500 text-blue-600 ring-blue-100');
+                              setEditingStage(null);
+                              setIsStageModalOpen(true);
+                            }}
+                            className="text-[10px] font-extrabold text-[#128C7E] hover:text-[#075e54] flex items-center gap-1 uppercase transition-colors"
+                          >
+                            <Plus size={12} />
+                            Adicionar
+                          </button>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-2">
-                          {CRM_STAGES.map((stg) => {
-                            const isCurrentStatus = matchedPatient?.status === stg.id;
+                        <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                          {(crmStages.length > 0 ? crmStages : CRM_STAGES).map((stg) => {
+                            const isCurrentStatus = matchedPatient?.status === stg.id || (matchedPatient?.status && (matchedPatient.status.endsWith(`_${stg.id}`) || stg.id.endsWith(`_${matchedPatient.status}`)));
+                            const stageBgColor = getBgColorClass(stg.color);
                             
                             return (
-                              <button
+                              <div
                                 key={stg.id}
-                                onClick={() => handleUpdateCRMStage(stg.id as any)}
                                 className={`
-                                  w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all relative overflow-hidden group
+                                  group relative flex items-center justify-between p-1 rounded-xl border transition-all
                                   ${isCurrentStatus 
-                                    ? 'bg-[#128C7E]/5 border-[#128C7E] shadow-sm text-neutral-800' 
-                                    : 'bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50 text-neutral-600'}
+                                    ? 'bg-[#128C7E]/5 border-[#128C7E] shadow-sm' 
+                                    : 'bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50'}
                                 `}
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <div className={`w-2.5 h-2.5 rounded-full ${stg.color} relative`}>
-                                    {isCurrentStatus && (
-                                      <span className="absolute inset-0 bg-current rounded-full animate-ping opacity-75" />
-                                    )}
+                                <button
+                                  onClick={() => handleUpdateCRMStage(stg.id)}
+                                  className="flex-1 text-left p-1.5 flex items-center justify-between text-neutral-800"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2.5 h-2.5 rounded-full ${stageBgColor} relative`}>
+                                      {isCurrentStatus && (
+                                        <span className="absolute inset-0 bg-current rounded-full animate-ping opacity-75" />
+                                      )}
+                                    </div>
+                                    <span className="text-xs font-extrabold tracking-tight uppercase">
+                                      {stg.title}
+                                    </span>
                                   </div>
-                                  <span className="text-xs font-extrabold tracking-tight uppercase">
-                                    {stg.title}
-                                  </span>
-                                </div>
 
-                                {isCurrentStatus ? (
-                                  <span className="text-[10px] font-black text-[#128C7E] uppercase bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1 pr-1 border border-emerald-100">
-                                    <Check size={10} />
-                                    No Funil
-                                  </span>
-                                ) : (
-                                  <ChevronRight size={14} className="text-neutral-300 group-hover:text-neutral-500 transition-colors" />
+                                  {isCurrentStatus ? (
+                                    <span className="text-[9px] font-black text-[#128C7E] uppercase bg-emerald-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 border border-emerald-100 mr-1 select-none">
+                                      <Check size={10} />
+                                      No Funil
+                                    </span>
+                                  ) : (
+                                    <ChevronRight size={14} className="text-neutral-350 mr-1 shrink-0" />
+                                  )}
+                                </button>
+
+                                {crmStages.length > 0 && (
+                                  <div className="flex gap-1 shrink-0 pr-1 ml-1">
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingStage(stg);
+                                        setNewStageTitle(stg.title);
+                                        setNewStageColor(stg.color);
+                                        setStageModalMode('edit');
+                                        setIsStageModalOpen(true);
+                                      }}
+                                      className="p-1 hover:bg-neutral-150 text-neutral-400 hover:text-blue-600 rounded"
+                                      title="Editar etapa"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3 L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                    </button>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (window.confirm(`Deseja mesmo excluir a etapa "${stg.title}"?`)) {
+                                          handleDeleteStage(stg.id);
+                                        }
+                                      }}
+                                      className="p-1 hover:bg-neutral-150 text-neutral-400 hover:text-red-650 rounded"
+                                      title="Excluir etapa"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
                                 )}
-                              </button>
+                              </div>
                             );
                           })}
                         </div>
@@ -933,31 +1293,100 @@ export default function WhatsAppSimulator() {
 
                       {/* DENTAL SPECIFIC TARGETING TAGS */}
                       <div className="space-y-2.5 pt-1 border-t border-neutral-100">
-                        <span className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider">
-                          Tags de Interesse Clínico
-                        </span>
+                        <div className="flex items-center justify-between">
+                          <span className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider">
+                            Tags de Interesse Clínico
+                          </span>
+                          <button 
+                            onClick={() => {
+                              setTagModalMode('add');
+                              setNewTagLabel('');
+                              setNewTagType('specialty');
+                              setEditingTag(null);
+                              setIsTagModalOpen(true);
+                            }}
+                            className="text-[10px] font-extrabold text-[#128C7E] hover:text-[#075e54] flex items-center gap-1 uppercase transition-colors"
+                          >
+                            <Plus size={12} />
+                            Adicionar
+                          </button>
+                        </div>
                         
-                        <div className="flex flex-wrap gap-1.5">
-                          {PREDEFINED_CRM_TAGS.map((tag) => {
-                            const currentInterestList = matchedPatient?.interestedIn || '';
-                            const isTagged = currentInterestList.split(',').map(t => t.trim()).includes(tag.id);
-                            
-                            return (
-                              <button
-                                key={tag.id}
-                                onClick={() => handleToggleInterestTag(tag.id)}
-                                className={`
-                                  text-[10px] font-bold px-2.5 py-1.5 rounded-xl border transition-all active:scale-95 flex items-center gap-1
-                                  ${isTagged 
-                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' 
-                                    : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'}
-                                `}
-                              >
-                                {tag.label}
-                                {isTagged && <Check size={10} className="stroke-[3]" />}
-                              </button>
-                            );
-                          })}
+                        {dynamicTags.length === 0 ? (
+                          <div className="p-4 text-center bg-neutral-50 rounded-xl border border-dashed border-neutral-200">
+                            <p className="text-[10px] text-neutral-400 font-medium">Nenhuma tag cadastrada em Especialidades ou Procedimentos.</p>
+                            <button 
+                              onClick={() => {
+                                setTagModalMode('add');
+                                setNewTagLabel('');
+                                setNewTagType('specialty');
+                                setEditingTag(null);
+                                setIsTagModalOpen(true);
+                              }}
+                              className="mt-2 text-[10px] font-bold text-[#128C7E] underline"
+                            >
+                              Adicionar primeira tag
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1.5 max-h-[160px] overflow-y-auto pr-1">
+                            {dynamicTags.map((tag) => {
+                              const currentInterestList = matchedPatient?.interestedIn || '';
+                              const isTagged = currentInterestList.split(',').map(t => t.trim()).includes(tag.label);
+                              
+                              return (
+                                <div 
+                                  key={`${tag.type}-${tag.id}`}
+                                  className={`
+                                    group flex items-center justify-between p-2 rounded-xl border transition-all text-xs
+                                    ${isTagged 
+                                      ? 'bg-emerald-50/50 border-emerald-500' 
+                                      : 'bg-white border-neutral-200'}
+                                  `}
+                                >
+                                  <button
+                                    onClick={() => handleToggleInterestTag(tag.label)}
+                                    className="flex-1 text-left font-bold flex items-center gap-1.5 min-w-0"
+                                  >
+                                    <div className={`w-2 h-2 rounded-full ${tag.type === 'specialty' ? 'bg-indigo-500' : 'bg-teal-500'}`} />
+                                    <span className="truncate text-neutral-700">{tag.label}</span>
+                                    {isTagged && <Check size={12} className="text-emerald-600 stroke-[3] shrink-0" />}
+                                  </button>
+
+                                  <div className="flex gap-1 shrink-0 ml-2">
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingTag({ id: tag.id, label: tag.label, type: tag.type });
+                                        setNewTagLabel(tag.label);
+                                        setNewTagType(tag.type);
+                                        setTagModalMode('edit');
+                                        setIsTagModalOpen(true);
+                                      }}
+                                      className="p-1 hover:bg-neutral-100 text-neutral-450 hover:text-blue-600 rounded"
+                                      title="Editar tag"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                    </button>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteTag(tag.id, tag.type);
+                                      }}
+                                      className="p-1 hover:bg-neutral-100 text-neutral-450 hover:text-red-650 rounded"
+                                      title="Excluir tag"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="flex gap-2 text-[9px] text-neutral-400 font-medium px-1 pt-1 justify-between">
+                          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> Especialidades</span>
+                          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-teal-500" /> Procedimentos</span>
                         </div>
                       </div>
 
@@ -998,6 +1427,89 @@ export default function WhatsAppSimulator() {
         )}
 
       </div>
+
+      {/* Dynamic Tag Creator/Editor Overlay Modal */}
+      <AnimatePresence>
+        {isTagModalOpen && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsTagModalOpen(false)}
+              className="absolute inset-0 bg-neutral-900/40 backdrop-blur-xs"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 z-10"
+            >
+              <h3 className="text-sm font-black text-neutral-800 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2">
+                {tagModalMode === 'add' ? 'Nova Tag de Interesse' : 'Editar Tag de Interesse'}
+              </h3>
+              
+              <div className="space-y-4">
+                {tagModalMode === 'add' && (
+                  <div>
+                    <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider mb-2">Vincular a:</label>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setNewTagType('specialty')}
+                        className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                          newTagType === 'specialty' 
+                            ? 'bg-indigo-50 border-indigo-500 text-indigo-700' 
+                            : 'bg-white border-neutral-200 text-neutral-600'
+                        }`}
+                      >
+                        Especialidade
+                      </button>
+                      <button 
+                        onClick={() => setNewTagType('procedure')}
+                        className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                          newTagType === 'procedure' 
+                            ? 'bg-teal-50 border-teal-500 text-teal-700' 
+                            : 'bg-white border-neutral-200 text-neutral-600'
+                        }`}
+                      >
+                        Procedimento
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider mb-2">Nome da Tag</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder={newTagType === 'specialty' ? 'Ex: Ortodontia' : 'Ex: Clareamento'}
+                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#128C7E]"
+                    value={newTagLabel}
+                    onChange={(e) => setNewTagLabel(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end pt-2">
+                  <button 
+                    onClick={() => setIsTagModalOpen(false)}
+                    className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-bold rounded-xl transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={tagModalMode === 'add' ? handleAddTag : handleEditTag}
+                    disabled={!newTagLabel.trim()}
+                    className="px-4 py-2 bg-[#128C7E] hover:bg-[#075e54] text-white text-xs font-bold rounded-xl transition-all shadow-sm disabled:opacity-50"
+                  >
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

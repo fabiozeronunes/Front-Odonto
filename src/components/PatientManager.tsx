@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, orderBy, deleteDoc, doc, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { Trash2, Edit2, User, Search, MessageCircle } from 'lucide-react';
+import { Trash2, Edit2, User, Search, MessageCircle, FileText } from 'lucide-react';
 import PatientForm from './PatientForm';
 import { getPatientId } from '../lib/patient-utils';
 
@@ -138,9 +138,18 @@ export default function PatientManager() {
                   })()}
                 </div>
               </div>
-              <div className="flex gap-2 justify-end w-full sm:w-auto border-t sm:border-t-0 pt-2.5 sm:pt-0 border-neutral-100 shrink-0">
-                <button onClick={() => openForm(p)} className="flex-1 sm:flex-initial flex items-center justify-center gap-1 py-2 px-3 sm:p-2.5 text-neutral-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition-all border border-neutral-100 sm:border-0 text-xs sm:text-sm font-bold sm:font-normal"><Edit2 size={16} /><span className="sm:hidden">Editar</span></button>
-                <button onClick={() => handleDelete(p.id)} className="flex-1 sm:flex-initial flex items-center justify-center gap-1 py-2 px-3 sm:p-2.5 text-neutral-600 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all border border-neutral-100 sm:border-0 text-xs sm:text-sm font-bold sm:font-normal"><Trash2 size={16} /><span className="sm:hidden">Excluir</span></button>
+              <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center justify-end w-full sm:w-auto border-t sm:border-t-0 pt-2.5 sm:pt-0 border-neutral-100 shrink-0">
+                <button 
+                  onClick={() => openForm(p)} 
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2 sm:py-2.5 rounded-xl transition-all shadow-xs hover:shadow-md hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
+                >
+                  <FileText size={16} />
+                  <span>ABRIR PRONTUÁRIO</span>
+                </button>
+                <div className="flex gap-1.5 w-full sm:w-auto justify-end">
+                  <button onClick={() => openForm(p)} className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:p-2 text-neutral-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition-all border border-neutral-100 sm:border-0 text-xs sm:text-sm font-bold sm:font-normal" title="Editar"><Edit2 size={16} /><span className="sm:hidden">Editar</span></button>
+                  <button onClick={() => handleDelete(p.id)} className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:p-2 text-neutral-600 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all border border-neutral-100 sm:border-0 text-xs sm:text-sm font-bold sm:font-normal" title="Excluir"><Trash2 size={16} /><span className="sm:hidden">Excluir</span></button>
+                </div>
               </div>
             </div>
           ))

@@ -47,6 +47,10 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     
+    match /funnel_stages/{stageId} {
+      allow read, write: if isSignedIn();
+    }
+    
     match /system/{docId} {
       allow read: if isSignedIn();
     }

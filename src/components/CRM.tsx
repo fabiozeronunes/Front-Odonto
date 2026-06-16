@@ -195,14 +195,20 @@ export default function CRM() {
                       <span className="text-[10px] font-bold py-0.5 px-2 bg-blue-50 text-blue-600 rounded-md">
                         {clinics.find(c => c.id === patient.clinicId)?.name || 'Clínica não encontrada'}
                       </span>
-                      {patient.interestedIn && (
-                        <span className="text-[10px] font-bold py-0.5 px-2 bg-amber-50 text-amber-600 rounded-md">
-                          {patient.interestedIn}
+                      {patient.interestedIn && patient.interestedIn.split(',').map(tag => tag.trim()).filter(Boolean).map(tag => (
+                        <span key={tag} className="text-[9px] font-extrabold py-0.5 px-2 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-lg">
+                          {tag}
                         </span>
-                      )}
+                      ))}
                       {patient.source && (
-                        <span className={`text-[10px] font-bold py-0.5 px-2 rounded-md ${patient.source === 'whatsapp_real' ? 'bg-emerald-50 text-emerald-600' : 'bg-neutral-50 text-neutral-600'}`}>
-                          {patient.source === 'whatsapp_real' ? 'WhatsApp Real' : 'Simulador'}
+                        <span className={`text-[9px] font-black py-0.5 px-2 rounded-lg text-white uppercase select-none ${
+                          patient.source === 'Facebook' ? 'bg-[#1877F2]' :
+                          patient.source === 'Google Ads' ? 'bg-[#4285F4]' :
+                          patient.source === 'TikTok' ? 'bg-black' :
+                          patient.source === 'whatsapp_real' ? 'bg-[#128C7E]' :
+                          'bg-neutral-600'
+                        }`}>
+                          {patient.source === 'whatsapp_real' ? 'WhatsApp' : patient.source}
                         </span>
                       )}
                     </div>
