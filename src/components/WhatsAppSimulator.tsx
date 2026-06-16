@@ -74,7 +74,7 @@ const STAGE_COLOR_PRESETS = [
   { value: 'bg-purple-500 text-purple-600 ring-purple-100', bg: 'bg-purple-500', name: 'Roxo' },
   { value: 'bg-rose-500 text-rose-600 ring-rose-100', bg: 'bg-rose-500', name: 'Rosa' },
   { value: 'bg-indigo-500 text-indigo-600 ring-indigo-100', bg: 'bg-indigo-500', name: 'Anil' },
-  { value: 'bg-neutral-500 text-neutral-600 ring-neutral-100', bg: 'bg-neutral-505', name: 'Cinza' },
+  { value: 'bg-neutral-500 text-neutral-600 ring-neutral-100', bg: 'bg-neutral-500', name: 'Cinza' },
 ];
 
 export default function WhatsAppSimulator() {
@@ -144,7 +144,7 @@ export default function WhatsAppSimulator() {
   const [newTagType, setNewTagType] = useState<'specialty' | 'procedure'>('specialty');
 
   // Funnel Stage Modal / CRUD states
-  const [crmStages, setCrmStages] = useState<any[]>([]);
+  const [crmStages, setCrmStages] = useState<any[]>(CRM_STAGES);
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
   const [stageModalMode, setStageModalMode] = useState<'add' | 'edit'>('add');
   const [editingStage, setEditingStage] = useState<any | null>(null);
@@ -197,13 +197,7 @@ export default function WhatsAppSimulator() {
         unsubFunnelStages = onSnapshot(funnelStagesQuery, async (snapshot) => {
           const loadedStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
           if (loadedStages.length === 0) {
-            const seedKey = `seeded_stages_${user.uid}`;
-            if (!localStorage.getItem(seedKey)) {
-              localStorage.setItem(seedKey, 'true');
-              await seedDefaultStages(user.uid);
-            } else {
-              setCrmStages([]);
-            }
+            await seedDefaultStages(user.uid);
           } else {
             loadedStages.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
             setCrmStages(loadedStages);
@@ -214,7 +208,7 @@ export default function WhatsAppSimulator() {
         setPatients([]);
         setSpecialties([]);
         setProcedures([]);
-        setCrmStages([]);
+        setCrmStages(CRM_STAGES);
       }
     });
 
@@ -459,6 +453,39 @@ export default function WhatsAppSimulator() {
     }
   };
 
+  // Update CRM source channel directly
+  const handleUpdateCRMChannel = async (channel: string) => {
+    if (!activeChatId) return;
+    const phone = activeChatId.split('@')[0];
+    const activeChat = chats[activeChatId];
+    try {
+      if (matchedPatient) {
+        await updateDoc(doc(db, 'pacientes', matchedPatient.id), {
+          source: channel,
+          lastContactAt: serverTimestamp()
+        });
+      } else {
+        // Create lead automatically on channel click if not registered yet
+        const clinicId = clinics[0]?.id || '';
+        const nameToUse = editingPatientName.trim() || activeChat?.name || `+${phone}`;
+        await addDoc(collection(db, 'pacientes'), {
+          name: nameToUse,
+          nome: nameToUse,
+          phone: phone,
+          telefone: phone,
+          status: 'lead',
+          clinicId: clinicId,
+          ownerId: currentUser?.uid || '',
+          source: channel,
+          lastContactAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        });
+      }
+    } catch (e) {
+      console.error("Erro ao atualizar canal de captação:", e);
+    }
+  };
+
   // Toggle specific therapeutic interest tags
   const handleToggleInterestTag = async (tagLabel: string) => {
     if (!activeChatId) return;
@@ -567,48 +594,69 @@ export default function WhatsAppSimulator() {
     }
   };
 
-  // Add a new Funnel Stage to Firestore
+  // Add a new Funnel Stage to Firestore or local memory fallback
   const handleAddStage = async () => {
-    if (!newStageTitle.trim() || !currentUser) return;
-    try {
-      const nextOrder = crmStages.length;
-      const stageId = `stage_${Date.now()}`;
-      await setDoc(doc(db, 'funnel_stages', `${currentUser.uid}_${stageId}`), {
+    if (!newStageTitle.trim()) return;
+    const stageId = `stage_${Date.now()}`;
+    const nextOrder = crmStages.length;
+    
+    if (currentUser) {
+      try {
+        await setDoc(doc(db, 'funnel_stages', `${currentUser.uid}_${stageId}`), {
+          title: newStageTitle.trim(),
+          color: newStageColor,
+          order: nextOrder,
+          ownerId: currentUser.uid,
+          createdAt: new Date().toISOString()
+        });
+      } catch (e) {
+        console.error("Erro ao adicionar etapa de funil:", e);
+      }
+    } else {
+      const currentList = crmStages.length > 0 ? crmStages : [...CRM_STAGES];
+      setCrmStages([...currentList, {
+        id: stageId,
         title: newStageTitle.trim(),
         color: newStageColor,
-        order: nextOrder,
-        ownerId: currentUser.uid,
-        createdAt: new Date().toISOString()
-      });
-      setNewStageTitle('');
-      setIsStageModalOpen(false);
-    } catch (e) {
-      console.error("Erro ao adicionar etapa de funil:", e);
+        order: nextOrder
+      }]);
     }
+    setNewStageTitle('');
+    setIsStageModalOpen(false);
   };
 
-  // Edit an existing Funnel Stage in Firestore
+  // Edit an existing Funnel Stage in Firestore or local memory fallback
   const handleEditStage = async () => {
     if (!editingStage || !newStageTitle.trim()) return;
-    try {
-      await updateDoc(doc(db, 'funnel_stages', editingStage.id), {
-        title: newStageTitle.trim(),
-        color: newStageColor
-      });
-      setEditingStage(null);
-      setNewStageTitle('');
-      setIsStageModalOpen(false);
-    } catch (e) {
-      console.error("Erro ao editar etapa de funil:", e);
+    if (currentUser) {
+      try {
+        await updateDoc(doc(db, 'funnel_stages', editingStage.id), {
+          title: newStageTitle.trim(),
+          color: newStageColor
+        });
+      } catch (e) {
+        console.error("Erro ao editar etapa de funil:", e);
+      }
+    } else {
+      const currentList = crmStages.length > 0 ? crmStages : [...CRM_STAGES];
+      setCrmStages(currentList.map(s => s.id === editingStage.id ? { ...s, title: newStageTitle.trim(), color: newStageColor } : s));
     }
+    setEditingStage(null);
+    setNewStageTitle('');
+    setIsStageModalOpen(false);
   };
 
-  // Delete a Funnel Stage from Firestore
+  // Delete a Funnel Stage from Firestore or local memory fallback
   const handleDeleteStage = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'funnel_stages', id));
-    } catch (e) {
-      console.error("Erro ao excluir etapa de funil:", e);
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'funnel_stages', id));
+      } catch (e) {
+        console.error("Erro ao excluir etapa de funil:", e);
+      }
+    } else {
+      const currentList = crmStages.length > 0 ? crmStages : [...CRM_STAGES];
+      setCrmStages(currentList.filter(s => s.id !== id));
     }
   };
 
@@ -1181,6 +1229,33 @@ export default function WhatsAppSimulator() {
                           </div>
                         </div>
 
+                        <div className="space-y-1.5 pt-1">
+                          <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider">Canal do Lead</label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {[
+                              { id: 'Google Ads', label: 'Google Ads', color: 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100/50', activeColor: 'bg-[#4285F4] text-white border-transparent' },
+                              { id: 'Facebook', label: 'Facebook', color: 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100/50', activeColor: 'bg-[#1877F2] text-white border-transparent' },
+                              { id: 'TikTok', label: 'TikTok', color: 'bg-neutral-100 text-neutral-800 border-neutral-200 hover:bg-neutral-200/50', activeColor: 'bg-black text-white border-transparent' },
+                              { id: 'whatsapp_real', label: 'WhatsApp', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/50', activeColor: 'bg-[#25D366] text-white border-transparent' },
+                            ].map((channel) => {
+                              const currentChannel = matchedPatient ? getAutoSource(matchedPatient) : getAutoChatSource(activeChatId || '');
+                              const isActive = (currentChannel === channel.id) || (channel.id === 'whatsapp_real' && currentChannel === 'WhatsApp');
+                              
+                              return (
+                                <button
+                                  key={channel.id}
+                                  onClick={() => handleUpdateCRMChannel(channel.id)}
+                                  className={`px-2 py-1.5 rounded-xl border text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
+                                    isActive ? channel.activeColor : `${channel.color} text-neutral-600`
+                                  }`}
+                                >
+                                  {channel.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
                         {matchedPatient ? (
                           <div className="bg-emerald-50 text-emerald-800 text-[10px] font-semibold border border-emerald-100 p-2 rounded-xl flex items-center gap-1.5 mt-2">
                             <Check size={12} className="text-emerald-600 shrink-0" />
@@ -1500,6 +1575,84 @@ export default function WhatsAppSimulator() {
                   <button 
                     onClick={tagModalMode === 'add' ? handleAddTag : handleEditTag}
                     disabled={!newTagLabel.trim()}
+                    className="px-4 py-2 bg-[#128C7E] hover:bg-[#075e54] text-white text-xs font-bold rounded-xl transition-all shadow-sm disabled:opacity-50"
+                  >
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Dynamic CRM Stage Creator/Editor Overlay Modal */}
+      <AnimatePresence>
+        {isStageModalOpen && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsStageModalOpen(false)}
+              className="absolute inset-0 bg-neutral-900/40 backdrop-blur-xs"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 z-10"
+            >
+              <h3 className="text-sm font-black text-neutral-800 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2">
+                {stageModalMode === 'add' ? 'Nova Etapa do Funil' : 'Editar Etapa do Funil'}
+              </h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider mb-2">Nome da Etapa</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="Ex: Em Negociação"
+                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#128C7E]"
+                    value={newStageTitle}
+                    onChange={(e) => setNewStageTitle(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider mb-2">Selecione uma Cor</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {STAGE_COLOR_PRESETS.map((color) => {
+                      const isSelected = newStageColor === color.value;
+                      const cleanBg = color.bg === 'bg-neutral-555' || color.bg === 'bg-neutral-505' ? 'bg-neutral-500' : color.bg;
+                      return (
+                        <button
+                          key={color.value}
+                          type="button"
+                          onClick={() => setNewStageColor(color.value)}
+                          className={`h-8 rounded-xl border flex items-center justify-center transition-all ${
+                            isSelected ? 'ring-2 ring-offset-2 ring-[#128C7E] border-transparent' : 'border-neutral-200'
+                          } ${cleanBg}`}
+                          title={color.name}
+                        >
+                          {isSelected && <Check size={14} className="text-white" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-2">
+                  <button 
+                    onClick={() => setIsStageModalOpen(false)}
+                    className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-bold rounded-xl transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={stageModalMode === 'add' ? handleAddStage : handleEditStage}
+                    disabled={!newStageTitle.trim()}
                     className="px-4 py-2 bg-[#128C7E] hover:bg-[#075e54] text-white text-xs font-bold rounded-xl transition-all shadow-sm disabled:opacity-50"
                   >
                     Salvar
