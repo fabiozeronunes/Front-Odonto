@@ -72,6 +72,24 @@ let contactsCache: Record<string, string> = {};
 let isConnecting = false;
 let forceDisconnect = false;
 
+function isRegisteredContact(jid: string, name?: string): boolean {
+  // MUST strictly only be individual physical chats on WhatsApp Web
+  if (!jid || !jid.endsWith('@s.whatsapp.net')) return false;
+
+  const contactName = name || contactsCache[jid];
+  if (!contactName) return false;
+
+  const trimmed = contactName.trim();
+  if (!trimmed) return false;
+
+  // If the display name is just a phone number or format like "+5511...", it is an unsaved guest contact
+  if (trimmed.startsWith('+') || /^\d+$/.test(trimmed.replace(/\s+/g, '').replace(/[-()+]/g, ''))) {
+    return false;
+  }
+
+  return true;
+}
+
 function saveMessageToHistory(remoteJid: string, role: 'user' | 'assistant', text: string) {
   if (!lastHistory) {
     lastHistory = { chats: [], messages: [] };
@@ -236,19 +254,36 @@ async function connectToWhatsApp() {
 
       // Broadcast some recent chats to populate the UI
       if (chats && chats.length > 0) {
-        // Map chats to include the mapped name from contactsCache if not already presenting a clean name
-        const enrichedChats = chats.map((chat: any) => {
+        // Filter out groups, broadcasts and statuses. ONLY keep individual chats with a registered saved contact name.
+        const filteredChats = chats.filter((chat: any) => {
+          const jid = chat.id || '';
+          if (!jid.endsWith('@s.whatsapp.net')) return false;
+          // Pre-populate contactsCache if chat holds a name
+          if (chat.name && !contactsCache[jid]) {
+            contactsCache[jid] = chat.name;
+          }
+          const name = chat.name || contactsCache[chat.id];
+          return isRegisteredContact(jid, name);
+        });
+
+        // Map chats to include the mapped name from contactsCache
+        const enrichedChats = filteredChats.map((chat: any) => {
           const phone = chat.id.split('@')[0];
-          const name = chat.name || contactsCache[chat.id] || `+${phone}`;
+          const name = chat.name || contactsCache[chat.id];
           return {
             ...chat,
             name: name
           };
         });
 
+        const filteredMessages = (messages || []).filter((msg: any) => {
+          const jid = msg.key?.remoteJid || '';
+          return jid && jid.endsWith('@s.whatsapp.net') && isRegisteredContact(jid);
+        });
+
         lastHistory = {
-          chats: enrichedChats.slice(0, 20),
-          messages: messages?.slice(0, 100) || []
+          chats: enrichedChats.slice(0, 50),
+          messages: filteredMessages.slice(0, 300)
         };
         broadcast({ 
           type: 'history', 
@@ -304,12 +339,20 @@ async function connectToWhatsApp() {
       for (const msg of m.messages) {
         if (!msg.key.fromMe && msg.message) {
           const remoteJid = msg.key.remoteJid;
+          if (!remoteJid || !remoteJid.endsWith('@s.whatsapp.net')) {
+            continue; // Skip groups and statuses - strictly individual chats
+          }
           const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
           const phone = remoteJid?.split('@')[0] || '';
           const pushName = msg.pushName || '';
           
           if (remoteJid && pushName) {
             contactsCache[remoteJid] = pushName;
+          }
+
+          // Skip if this isn't a registered contact with actual name and number
+          if (!isRegisteredContact(remoteJid, pushName)) {
+            continue;
           }
 
           if (text) {

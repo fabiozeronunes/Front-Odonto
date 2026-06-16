@@ -78,7 +78,26 @@ const STAGE_COLOR_PRESETS = [
 ];
 
 export default function WhatsAppSimulator() {
-  const [chats, setChats] = useState<Record<string, { name: string; lastMessage: string; timestamp: string; messages: Message[] }>>({});
+  const [chats, setChats] = useState<Record<string, { name: string; lastMessage: string; timestamp: string; messages: Message[] }>>(() => {
+    try {
+      const saved = localStorage.getItem('wa_simulator_chats');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error("Erro ao ler wa_simulator_chats:", e);
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (Object.keys(chats).length > 0) {
+        localStorage.setItem('wa_simulator_chats', JSON.stringify(chats));
+      }
+    } catch (e) {
+      console.error("Erro ao salvar wa_simulator_chats:", e);
+    }
+  }, [chats]);
+
   const [activeChatId, setActiveChatId] = useState<string | null>(() => {
     try {
       return localStorage.getItem('wa_active_chat_id');
@@ -124,6 +143,8 @@ export default function WhatsAppSimulator() {
     }
   });
 
+  const [chatToDelete, setChatToDelete] = useState<string | null>(null);
+
   // Track edits to Patient Name directly from whatsapp
   const [editingPatientName, setEditingPatientName] = useState<string>('');
   const [isSavingName, setIsSavingName] = useState(false);
@@ -143,8 +164,15 @@ export default function WhatsAppSimulator() {
   const [newTagLabel, setNewTagLabel] = useState('');
   const [newTagType, setNewTagType] = useState<'specialty' | 'procedure'>('specialty');
 
-  // Funnel Stage Modal / CRUD states
-  const [crmStages, setCrmStages] = useState<any[]>(CRM_STAGES);
+  // Funnel Stage Modal / CRUD states with localStorage support
+  const [crmStages, setCrmStages] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('wa_crm_funnel_stages');
+      return saved ? JSON.parse(saved) : CRM_STAGES;
+    } catch (e) {
+      return CRM_STAGES;
+    }
+  });
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
   const [stageModalMode, setStageModalMode] = useState<'add' | 'edit'>('add');
   const [editingStage, setEditingStage] = useState<any | null>(null);
@@ -307,6 +335,7 @@ export default function WhatsAppSimulator() {
           });
         } else if (data.type === 'message') {
           const remoteJid = data.remoteJid || 'status@broadcast';
+          if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('status')) return;
           const phone = remoteJid.split('@')[0];
           
           const newMsg: Message = {
@@ -614,12 +643,18 @@ export default function WhatsAppSimulator() {
       }
     } else {
       const currentList = crmStages.length > 0 ? crmStages : [...CRM_STAGES];
-      setCrmStages([...currentList, {
+      const updatedList = [...currentList, {
         id: stageId,
         title: newStageTitle.trim(),
         color: newStageColor,
         order: nextOrder
-      }]);
+      }];
+      setCrmStages(updatedList);
+      try {
+        localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(updatedList));
+      } catch (e) {
+        console.error("Erro ao salvar wa_crm_funnel_stages localmente:", e);
+      }
     }
     setNewStageTitle('');
     setIsStageModalOpen(false);
@@ -639,7 +674,13 @@ export default function WhatsAppSimulator() {
       }
     } else {
       const currentList = crmStages.length > 0 ? crmStages : [...CRM_STAGES];
-      setCrmStages(currentList.map(s => s.id === editingStage.id ? { ...s, title: newStageTitle.trim(), color: newStageColor } : s));
+      const updatedList = currentList.map(s => s.id === editingStage.id ? { ...s, title: newStageTitle.trim(), color: newStageColor } : s);
+      setCrmStages(updatedList);
+      try {
+        localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(updatedList));
+      } catch (e) {
+        console.error("Erro ao salvar wa_crm_funnel_stages localmente:", e);
+      }
     }
     setEditingStage(null);
     setNewStageTitle('');
@@ -656,7 +697,13 @@ export default function WhatsAppSimulator() {
       }
     } else {
       const currentList = crmStages.length > 0 ? crmStages : [...CRM_STAGES];
-      setCrmStages(currentList.filter(s => s.id !== id));
+      const updatedList = currentList.filter(s => s.id !== id);
+      setCrmStages(updatedList);
+      try {
+        localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(updatedList));
+      } catch (e) {
+        console.error("Erro ao salvar wa_crm_funnel_stages localmente:", e);
+      }
     }
   };
 
@@ -772,14 +819,35 @@ export default function WhatsAppSimulator() {
   // Permanently delete/hide whatsapp chat session from sidebar
   const handleDeleteChat = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (window.confirm("Deseja mesmo remover este número e ocultá-lo dos atendimentos?")) {
-      const updated = [...deletedChatIds, id];
-      setDeletedChatIds(updated);
-      localStorage.setItem('wa_deleted_chats', JSON.stringify(updated));
-      if (activeChatId === id) {
-        setActiveChatId(null);
+    setChatToDelete(id);
+  };
+
+  const confirmDeleteChat = async () => {
+    if (!chatToDelete) return;
+    const id = chatToDelete;
+    
+    // 1. Find corresponding patient by matching phone number
+    const matchedPt = findPatientForChat(id);
+    if (matchedPt && matchedPt.id) {
+      if (currentUser) {
+        try {
+          await deleteDoc(doc(db, 'pacientes', matchedPt.id));
+        } catch (err) {
+          console.error("Erro ao deletar lead/contato no Firestore:", err);
+        }
+      } else {
+        setPatients(prev => prev.filter(p => p.id !== matchedPt.id));
       }
     }
+
+    // 2. Hide chat from WhatsApp list
+    const updated = [...deletedChatIds, id];
+    setDeletedChatIds(updated);
+    localStorage.setItem('wa_deleted_chats', JSON.stringify(updated));
+    if (activeChatId === id) {
+      setActiveChatId(null);
+    }
+    setChatToDelete(null);
   };
 
   const activeChat = activeChatId ? chats[activeChatId] : null;
@@ -1658,6 +1726,50 @@ export default function WhatsAppSimulator() {
                     Salvar
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Excluir Chat/Contato Confirmation Modal */}
+      <AnimatePresence>
+        {chatToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setChatToDelete(null)}
+              className="absolute inset-0 bg-neutral-900/40 backdrop-blur-xs"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 z-10"
+            >
+              <h3 className="text-sm font-black text-[#dc2626] uppercase tracking-wider mb-2 border-b border-neutral-100 pb-2">
+                Excluir Contato e Conversa
+              </h3>
+              
+              <p className="text-xs text-neutral-600 mb-6 leading-relaxed">
+                Tem certeza de que deseja excluir este contato e conversa permanentemente? Esta ação também removerá o lead de seu funil/CRM e não poderá ser desfeita.
+              </p>
+
+              <div className="flex gap-2 justify-end">
+                <button 
+                  onClick={() => setChatToDelete(null)}
+                  className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-bold rounded-xl transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDeleteChat}
+                  className="px-4 py-2 bg-[#dc2626] hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
+                >
+                  Confirmar Exclusão
+                </button>
               </div>
             </motion.div>
           </div>

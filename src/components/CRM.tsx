@@ -30,6 +30,96 @@ export default function CRM() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Dynamic stages state with localStorage loading
+  const [stages, setStages] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('wa_crm_funnel_stages');
+      return saved ? JSON.parse(saved) : columns;
+    } catch (e) {
+      return columns;
+    }
+  });
+
+  const getBgColorClass = (colorStr: string) => {
+    if (!colorStr) return 'bg-blue-500';
+    return colorStr.split(' ')[0] || 'bg-blue-500';
+  };
+
+  // Drag and drop states
+  const [draggedStageIdx, setDraggedStageIdx] = useState<number | null>(null);
+  const [draggedPatientId, setDraggedPatientId] = useState<string | null>(null);
+
+  const handleDragStageStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.setData('text/plain', 'stage_' + index);
+    setDraggedStageIdx(index);
+  };
+
+  const handleDragPatientStart = (e: React.DragEvent, id: string) => {
+    e.stopPropagation();
+    e.dataTransfer.setData('text/plain', 'patient_' + id);
+    setDraggedPatientId(id);
+  };
+
+  const handleDropStage = async (e: React.DragEvent, targetIndex: number) => {
+    if (draggedStageIdx === null || draggedStageIdx === targetIndex) return;
+    
+    const reordered = [...stages];
+    const [moved] = reordered.splice(draggedStageIdx, 1);
+    reordered.splice(targetIndex, 0, moved);
+    
+    setStages(reordered);
+    setDraggedStageIdx(null);
+
+    // Update in Firestore
+    if (auth.currentUser) {
+      try {
+        for (let i = 0; i < reordered.length; i++) {
+          const stage = reordered[i];
+          if (stage.id) {
+            await updateDoc(doc(db, 'funnel_stages', stage.id), {
+              order: i
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao reordenar etapas no Firestore:", err);
+      }
+    }
+  };
+
+  const handleDropPatient = async (e: React.DragEvent, targetStageId: string) => {
+    if (!draggedPatientId) return;
+    const patientId = draggedPatientId;
+    
+    // Immediate visual update
+    setPatients(prev => prev.map(p => p.id === patientId ? { ...p, status: targetStageId as any } : p));
+    setDraggedPatientId(null);
+
+    try {
+      await updateDoc(doc(db, 'pacientes', patientId), {
+        status: targetStageId,
+        lastContactAt: serverTimestamp()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `patients/${patientId}`);
+    }
+  };
+
+  const handleColumnDrop = (e: React.DragEvent, columnId: string, colIndex: number) => {
+    e.preventDefault();
+    const data = e.dataTransfer.getData('text/plain');
+    if (data.startsWith('stage_')) {
+      handleDropStage(e, colIndex);
+    } else {
+      handleDropPatient(e, columnId);
+    }
+  };
+
+  const isMatchStage = (ptStatus: string, columnId: string) => {
+    if (!ptStatus) return false;
+    return ptStatus === columnId || columnId.endsWith(`_${ptStatus}`) || ptStatus.endsWith(`_${columnId}`);
+  };
+
   // Form State
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', clinicId: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,11 +127,13 @@ export default function CRM() {
   useEffect(() => {
     let unsubClinics: () => void;
     let unsubPacientes: () => void;
+    let unsubFunnelStages: () => void;
 
     const unsubscribe = auth.onAuthStateChanged((user) => {
       // Cleanup previous listeners
       if (unsubClinics) unsubClinics();
       if (unsubPacientes) unsubPacientes();
+      if (unsubFunnelStages) unsubFunnelStages();
       
       if (user) {
         const clinicsQuery = query(collection(db, 'clinics'), where('ownerId', '==', user.uid));
@@ -64,9 +156,45 @@ export default function CRM() {
           handleFirestoreError(error, OperationType.LIST, 'pacientes');
           setLoading(false);
         });
+
+        // Load dynamic stages synced from db
+        const funnelStagesQuery = query(collection(db, 'funnel_stages'), where('ownerId', '==', user.uid));
+        unsubFunnelStages = onSnapshot(funnelStagesQuery, (snapshot) => {
+          const loadedStages = snapshot.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              title: data.title,
+              color: getBgColorClass(data.color),
+              order: data.order ?? 0,
+              originalColor: data.color
+            };
+          });
+          if (loadedStages.length > 0) {
+            loadedStages.sort((a, b) => a.order - b.order);
+            setStages(loadedStages);
+            try {
+              localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(loadedStages));
+            } catch (e) {
+              console.error("Erro ao salvar wa_crm_funnel_stages localmente:", e);
+            }
+          } else {
+            setStages(columns);
+          }
+        });
       } else {
         setClinics([]);
         setPatients([]);
+        try {
+          const saved = localStorage.getItem('wa_crm_funnel_stages');
+          if (saved) {
+            setStages(JSON.parse(saved));
+          } else {
+            setStages(columns);
+          }
+        } catch (e) {
+          setStages(columns);
+        }
         setLoading(false);
       }
     });
@@ -75,6 +203,7 @@ export default function CRM() {
       unsubscribe();
       if (unsubClinics) unsubClinics();
       if (unsubPacientes) unsubPacientes();
+      if (unsubFunnelStages) unsubFunnelStages();
     };
   }, []);
 
@@ -154,37 +283,52 @@ export default function CRM() {
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="flex lg:grid lg:grid-cols-4 gap-6 overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0 flex-nowrap lg:flex-wrap lg:overflow-x-visible">
-          {columns.map((column) => (
-            <div key={column.id} className="space-y-4 shrink-0 w-[290px] sm:w-[320px] lg:w-auto lg:flex-1">
-              <div className="flex items-center justify-between px-2">
+        <div className="flex gap-6 overflow-x-auto pb-6 -mx-4 px-4 sm:mx-0 sm:px-0 flex-nowrap select-none min-h-[600px]">
+          {stages.map((column, colIdx) => (
+            <div 
+              key={column.id} 
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
+              className="space-y-4 shrink-0 w-[290px] sm:w-[320px] transition-all duration-200 border border-transparent rounded-2xl p-1"
+            >
+              <div 
+                draggable
+                onDragStart={(e) => handleDragStageStart(e, colIdx)}
+                className="flex items-center justify-between px-2 py-1.5 hover:bg-neutral-50 rounded-xl cursor-grab active:cursor-grabbing transition-colors border border-transparent hover:border-neutral-200/60"
+                title="Arraste por este cabeçalho para reordenar a etapa"
+              >
                 <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${column.color}`} />
-                  <h4 className="font-bold text-sm text-neutral-500 uppercase tracking-wider">{column.title}</h4>
+                  <div className={`w-3 h-3 rounded-full ${column.color || 'bg-blue-500'}`} />
+                  <h4 className="font-extrabold text-xs text-neutral-500 uppercase tracking-wider">{column.title}</h4>
                 </div>
-                <span className="text-xs font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full">
-                  {filteredPatients.filter(p => p.status === column.id).length}
+                <span className="text-xs font-black text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full">
+                  {filteredPatients.filter(p => isMatchStage(p.status, column.id)).length}
                 </span>
               </div>
 
-              <div className="bg-neutral-100/50 p-3 rounded-2xl min-h-[500px] space-y-3 border border-dashed border-neutral-200">
-                {filteredPatients.filter(p => p.status === column.id).map((patient, idx) => (
-                  <motion.div 
-                    layoutId={patient.id}
+              <div 
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => handleDropPatient(e, column.id)}
+                className="bg-neutral-100/50 p-3 rounded-2xl min-h-[500px] space-y-3 border border-dashed border-neutral-200 hover:bg-neutral-100/80 transition-all duration-150"
+              >
+                {filteredPatients.filter(p => isMatchStage(p.status, column.id)).map((patient, idx) => (
+                  <div 
                     key={`${patient.id}-${idx}`} 
-                    className="bg-white p-4 rounded-xl shadow-sm border border-neutral-200 cursor-grab active:cursor-grabbing group hover:border-blue-300 transition-all"
+                    draggable
+                    onDragStart={(e) => handleDragPatientStart(e, patient.id)}
+                    className="bg-white p-4 rounded-xl shadow-xs border border-neutral-200 cursor-grab active:cursor-grabbing group hover:border-blue-400 hover:shadow-xs transition-all duration-150"
                   >
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <h5 className="font-bold text-neutral-800">{patient.name}</h5>
+                        <h5 className="font-bold text-neutral-800 text-xs sm:text-sm">{patient.name}</h5>
                         <p className="text-[10px] text-neutral-400 font-medium">{patient.phone}</p>
                       </div>
                       <div className="flex gap-1">
-                        {columns.filter(c => c.id !== patient.status).map(c => (
+                        {stages.filter(c => !isMatchStage(patient.status, c.id)).map(c => (
                            <button 
                             key={c.id}
                             onClick={() => handleUpdateStatus(patient.id, c.id)}
-                            className={`w-2 h-2 rounded-full ${c.color} opacity-20 hover:opacity-100 transition-opacity`}
+                            className={`w-2 h-2 rounded-full ${c.color || 'bg-blue-500'} opacity-30 hover:opacity-100 transition-opacity`}
                             title={`Mover para ${c.title}`}
                            />
                         ))}
@@ -226,7 +370,7 @@ export default function CRM() {
                         {patient.lastContactAt ? 'Ativo' : 'Novo'}
                       </span>
                     </div>
-                  </motion.div>
+                  </div>
                 ))}
               </div>
             </div>
