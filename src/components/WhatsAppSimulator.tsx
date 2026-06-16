@@ -229,6 +229,11 @@ export default function WhatsAppSimulator() {
           } else {
             loadedStages.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
             setCrmStages(loadedStages);
+            try {
+              localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(loadedStages));
+            } catch (e) {
+              console.error("Erro ao salvar stages no localStorage:", e);
+            }
           }
         });
       } else {
@@ -236,7 +241,12 @@ export default function WhatsAppSimulator() {
         setPatients([]);
         setSpecialties([]);
         setProcedures([]);
-        setCrmStages(CRM_STAGES);
+        try {
+          const saved = localStorage.getItem('wa_crm_funnel_stages');
+          setCrmStages(saved ? JSON.parse(saved) : CRM_STAGES);
+        } catch (e) {
+          setCrmStages(CRM_STAGES);
+        }
       }
     });
 
@@ -449,7 +459,7 @@ export default function WhatsAppSimulator() {
   };
 
   // Update CRM stage directly (links tag update to CRM stage progression)
-  const handleUpdateCRMStage = async (stage: 'lead' | 'contacted' | 'scheduled' | 'lost') => {
+  const handleUpdateCRMStage = async (stage: string) => {
     if (!activeChatId) return;
     const phone = activeChatId.split('@')[0];
     const activeChat = chats[activeChatId];

@@ -165,6 +165,7 @@ async function connectToWhatsApp() {
   }
 
   isConnecting = true;
+  forceDisconnect = false;
   debugLog("connectToWhatsApp called");
   connectionStatus = 'connecting';
   broadcast({ type: 'status', status: 'connecting' });
@@ -225,7 +226,6 @@ async function connectToWhatsApp() {
               fs.rmSync('wa_auth', { recursive: true, force: true });
             }
           } catch(e) {}
-          forceDisconnect = false;
         }
       } else if (connection === 'open') {
         debugLog("connection open");
@@ -622,7 +622,6 @@ app.post("/api/wa-disconnect", (req, res) => {
       debugLog("Failed to delete wa_auth on explicit disconnect: " + e.message);
     }
     sock = null;
-    forceDisconnect = false;
     broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
   };
 
@@ -672,7 +671,6 @@ app.post("/api/wa-reset", (req, res) => {
       debugLog("Failed to delete wa_auth on explicit reset: " + e.message);
     }
     sock = null;
-    forceDisconnect = false;
     broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
     connectToWhatsApp();
   };

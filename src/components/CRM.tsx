@@ -61,14 +61,32 @@ export default function CRM() {
   };
 
   const handleDropStage = async (e: React.DragEvent, targetIndex: number) => {
-    if (draggedStageIdx === null || draggedStageIdx === targetIndex) return;
+    let sourceIdx = draggedStageIdx;
+    
+    // Fallback if state is null but transfer data exists
+    if (sourceIdx === null) {
+      const data = e.dataTransfer.getData('text/plain');
+      if (data.startsWith('stage_')) {
+        const parsed = parseInt(data.replace('stage_', ''), 10);
+        if (!isNaN(parsed)) sourceIdx = parsed;
+      }
+    }
+
+    if (sourceIdx === null || sourceIdx === targetIndex) return;
     
     const reordered = [...stages];
-    const [moved] = reordered.splice(draggedStageIdx, 1);
+    const [moved] = reordered.splice(sourceIdx, 1);
     reordered.splice(targetIndex, 0, moved);
     
     setStages(reordered);
     setDraggedStageIdx(null);
+
+    // Save locally
+    try {
+      localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(reordered));
+    } catch (err) {
+      console.error("Erro ao salvar ordem das etapas localmente:", err);
+    }
 
     // Update in Firestore
     if (auth.currentUser) {
@@ -88,8 +106,17 @@ export default function CRM() {
   };
 
   const handleDropPatient = async (e: React.DragEvent, targetStageId: string) => {
-    if (!draggedPatientId) return;
-    const patientId = draggedPatientId;
+    let patientId = draggedPatientId;
+
+    // Fallback if state is null but transfer data exists
+    if (!patientId) {
+      const data = e.dataTransfer.getData('text/plain');
+      if (data.startsWith('patient_')) {
+        patientId = data.replace('patient_', '');
+      }
+    }
+
+    if (!patientId) return;
     
     // Immediate visual update
     setPatients(prev => prev.map(p => p.id === patientId ? { ...p, status: targetStageId as any } : p));
@@ -107,11 +134,18 @@ export default function CRM() {
 
   const handleColumnDrop = (e: React.DragEvent, columnId: string, colIndex: number) => {
     e.preventDefault();
-    const data = e.dataTransfer.getData('text/plain');
-    if (data.startsWith('stage_')) {
+    if (draggedStageIdx !== null) {
       handleDropStage(e, colIndex);
-    } else {
+    } else if (draggedPatientId !== null) {
       handleDropPatient(e, columnId);
+    } else {
+      // General fallback using dataTransfer
+      const data = e.dataTransfer.getData('text/plain');
+      if (data.startsWith('stage_')) {
+        handleDropStage(e, colIndex);
+      } else {
+        handleDropPatient(e, columnId);
+      }
     }
   };
 
