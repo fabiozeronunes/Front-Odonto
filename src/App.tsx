@@ -28,8 +28,9 @@ import {
   ChevronDown,
   TrendingUp
 } from 'lucide-react';
-import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider } from './lib/firebase';
+import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db } from './lib/firebase';
 import { User } from 'firebase/auth';
+import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 
 // Components (will be extracted)
 import Dashboard from './components/Dashboard';
@@ -68,6 +69,45 @@ export default function App() {
     return (localStorage.getItem('logged_in_view') as any) || 'landing';
   });
   const [isSpecialtiesExpanded, setIsSpecialtiesExpanded] = useState(false);
+  const [dbVersion, setDbVersion] = useState<string | null>(null);
+
+  // Sync version checker
+  useEffect(() => {
+    if (!user) return;
+    
+    // Listen for global version updates for this user
+    const versionRef = doc(db, 'system', `sync_${user.uid}`);
+    const unsubVersion = onSnapshot(versionRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const remoteVersion = snapshot.data().timestamp;
+        const localVersion = localStorage.getItem('app_sync_version');
+        
+        if (remoteVersion !== localVersion) {
+          console.log("[Sync] Nova versão detectada, sincronizando dados locais...");
+          localStorage.setItem('app_sync_version', remoteVersion);
+          setSyncTrigger(prev => prev + 1);
+        }
+        setDbVersion(remoteVersion);
+      }
+    });
+
+    return () => unsubVersion();
+  }, [user]);
+
+  // Helper to trigger global sync after mutations
+  const triggerSync = async () => {
+    if (!user) return;
+    const timestamp = Date.now().toString();
+    try {
+      await setDoc(doc(db, 'system', `sync_${user.uid}`), {
+        timestamp,
+        updatedAt: serverTimestamp(),
+        ownerId: user.uid
+      });
+    } catch (e) {
+      console.error("Error triggering sync:", e);
+    }
+  };
 
   // Persistence for activeTab and accessToken
   useEffect(() => {

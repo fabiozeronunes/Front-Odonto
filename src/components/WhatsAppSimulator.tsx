@@ -221,6 +221,25 @@ export default function WhatsAppSimulator() {
   const [clinics, setClinics] = useState<Clinic[]>([]);
 
   useEffect(() => {
+    if (!currentUser) return;
+
+    // Sincronização em tempo real para pacientes (Contatos/Leads)
+    const patientsQuery = query(collection(db, 'pacientes'), where('ownerId', '==', currentUser.uid));
+    const unsubPatients = onSnapshot(patientsQuery, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
+      setPatients(docs);
+      
+      // Sincronizar com localStorage para fallback offline
+      localStorage.setItem('wa_simulator_patients', JSON.stringify(docs));
+      console.log("Pacientes sincronizados:", docs.length);
+    }, (error) => {
+      console.error("Erro na sincronização de pacientes:", error);
+    });
+
+    return () => unsubPatients();
+  }, [currentUser]);
+
+  useEffect(() => {
     if (jumpToData) {
       const { phone, name, source } = jumpToData;
       
@@ -287,6 +306,7 @@ export default function WhatsAppSimulator() {
 
   // Deleted numbers cache to persist hide/delete filter from Firestore
   const [deletedChatIds, setDeletedChatIds] = useState<string[]>([]);
+  const [syncVersion, setSyncVersion] = useState(0);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -297,6 +317,7 @@ export default function WhatsAppSimulator() {
       const ids = snapshot.docs.map(d => d.data().chatJid);
       setDeletedChatIds(ids);
       localStorage.setItem('wa_deleted_chats', JSON.stringify(ids));
+      setSyncVersion(v => v + 1); // Trigger refresh
     });
 
     return () => unsubDeleted();
@@ -1080,11 +1101,24 @@ export default function WhatsAppSimulator() {
         ownerId: currentUser.uid,
         chatJid: id,
         deletedAt: new Date().toISOString()
-      });
+      }, { merge: true });
+      
+      // Forçar atualização local imediata para feedback instantâneo
+      setDeletedChatIds(prev => [...new Set([...prev, id])]);
       
       if (activeChatId === id) {
         setActiveChatId(null);
       }
+      
+      // Gatilho de sincronização global (App.tsx versioning)
+      const syncRef = doc(db, 'system', `sync_${currentUser.uid}`);
+      await setDoc(syncRef, { 
+        timestamp: Date.now().toString(),
+        ownerId: currentUser.uid,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      console.log("[WhatsApp] Chat excluído e sincronizado:", id);
     } catch (err) {
       console.error("Erro ao sincronizar exclusão de chat:", err);
     }
@@ -1102,7 +1136,17 @@ export default function WhatsAppSimulator() {
 
   // Filter out deleted chats and apply search query + stage + channel filters
   const filteredChats = Object.entries(chats)
-    .filter(([id]) => !deletedChatIds.includes(id))
+    .filter(([id, chat]) => {
+      // 1. Ocultar chats deletados/arquivados sincronizados (Firestore)
+      if (deletedChatIds.includes(id)) return false;
+
+      // 2. Ocultar contatos sem nenhuma interação (mensagens)
+      // Exceto se for o chat atualmente selecionado (ex: pulo do CRM)
+      const hasMessages = chat.messages && chat.messages.length > 0;
+      if (!hasMessages && id !== activeChatId) return false;
+
+      return true;
+    })
     .filter(([id, chat]) => {
       const matchedPt = findPatientForChat(id);
       

@@ -239,6 +239,16 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
     if (auth.currentUser) {
       try {
         await deleteDoc(doc(db, 'funnel_stages', id));
+        
+        // Gatilho de sincronização global
+        const syncRef = doc(db, 'system', `sync_${auth.currentUser.uid}`);
+        await setDoc(syncRef, { 
+          timestamp: Date.now().toString(),
+          ownerId: auth.currentUser.uid,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        console.log("[CRM] Etapa excluída e sincronizada:", id);
       } catch (err) {
         console.error("Error deleting stage from Firestore:", err);
       }
@@ -277,13 +287,21 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           setLoading(false);
         });
 
-        const q = query(collection(db, 'pacientes'));
+        const q = query(collection(db, 'pacientes'), where('ownerId', '==', user.uid));
         unsubPacientes = onSnapshot(q, (ptSnapshot) => {
-          setPatients(ptSnapshot.docs.map(d => {
+          const ptList = ptSnapshot.docs.map(d => {
             const data = d.data();
             return { id: d.id, ...data, status: data.status || 'lead' } as Patient;
-          }));
+          });
+          setPatients(ptList);
+          // Atualiza localStorage se houver mudanças significativas
+          localStorage.setItem('wa_simulator_patients', JSON.stringify(ptList));
+          
+          // Sincronização forçada de versão para outros componentes
+          localStorage.setItem('crm_sync_timestamp', Date.now().toString());
+          
           setLoading(false);
+          console.log("[CRM Sync] Leads atualizados:", ptList.length);
         }, (error) => {
           console.error("Error loading pacientes in CRM:", error);
           handleFirestoreError(error, OperationType.LIST, 'pacientes');
@@ -414,34 +432,37 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
         </div>
       </div>
       <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
-          <input 
-            type="text" 
-            placeholder="Buscar paciente..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-neutral-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm"
-          />
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-          <button className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-neutral-600 hover:bg-neutral-50 font-medium transition-colors text-sm">
-            <Filter size={18} />
-            Filtros
-          </button>
-          <button 
-            onClick={() => setIsStageModalOpen(true)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-neutral-100 border border-neutral-200 rounded-xl text-neutral-600 hover:bg-neutral-200 font-bold transition-all text-sm"
-          >
-            <Plus size={18} />
-            Nova Etapa
-          </button>
+        <div className="flex gap-3 w-full sm:w-auto order-2 sm:order-1">
           <button 
             onClick={() => setIsModalOpen(true)}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/20 text-sm"
           >
             <Plus size={18} />
             Novo Lead
+          </button>
+          <button 
+            onClick={() => setIsStageModalOpen(true)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-neutral-600 hover:bg-neutral-50 font-bold transition-all text-sm shadow-sm"
+          >
+            <Plus size={18} />
+            Nova Etapa
+          </button>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto order-1 sm:order-2">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Buscar paciente..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white border border-neutral-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm transition-all"
+            />
+          </div>
+          <button className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-neutral-600 hover:bg-neutral-50 font-medium transition-colors text-sm shadow-sm">
+            <Filter size={18} />
+            Filtros
           </button>
         </div>
       </div>
@@ -451,14 +472,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="flex gap-4 pb-6 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto select-none min-h-[600px] scrollbar-hide">
+        <div className="flex gap-4 pb-6 overflow-x-auto select-none min-h-[600px] custom-scrollbar scroll-smooth">
           {stages.map((column, colIdx) => (
             <motion.div 
+              key={column.id || colIdx}
               layout
-              key={column.id} 
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
-              className="space-y-4 shrink-0 w-[280px] sm:w-[300px] transition-all duration-300 border border-transparent rounded-2xl p-1"
+              className="space-y-4 shrink-0 w-[280px] sm:w-[320px] transition-all duration-300 rounded-2xl p-1"
             >
               <div 
                 draggable
@@ -483,11 +504,13 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                     <Edit2 size={12} />
                   </button>
                   <button 
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       deleteStage(column.id);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded"
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-20"
                   >
                     <Trash2 size={12} />
                   </button>
