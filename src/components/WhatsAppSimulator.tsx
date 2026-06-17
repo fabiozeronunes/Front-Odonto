@@ -79,6 +79,16 @@ const STAGE_COLOR_PRESETS = [
 ];
 
 export default function WhatsAppSimulator() {
+  // Pre-read jump data to avoid race conditions in state initializers
+  const initialJumpFromCRM = (() => {
+    try {
+      const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
+      return jumpTo ? JSON.parse(jumpTo) : null;
+    } catch (e) {
+      return null;
+    }
+  })();
+
   const [chats, setChats] = useState<Record<string, { name: string; lastMessage: string; timestamp: string; messages: Message[]; source?: string }>>(() => {
     let baseChats: any = {};
     try {
@@ -88,25 +98,20 @@ export default function WhatsAppSimulator() {
       console.error("Erro ao ler wa_simulator_chats:", e);
     }
 
-    try {
-      const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
-      if (jumpTo) {
-        const data = JSON.parse(jumpTo);
-        if (data.phone) {
-          if (!baseChats[data.phone]) {
-            baseChats[data.phone] = {
-              name: data.name || data.phone.split('@')[0],
-              lastMessage: 'Atendimento iniciado pelo CRM',
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              messages: [],
-              source: data.source || 'CRM'
-            };
-          } else if (data.name) {
-            baseChats[data.phone].name = data.name;
-          }
-        }
+    if (initialJumpFromCRM?.phone) {
+      const { phone, name, source } = initialJumpFromCRM;
+      if (!baseChats[phone]) {
+        baseChats[phone] = {
+          name: name || phone.split('@')[0],
+          lastMessage: 'Atendimento iniciado pelo CRM',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          messages: [],
+          source: source || 'CRM'
+        };
+      } else if (name) {
+        baseChats[phone].name = name;
       }
-    } catch (e) {}
+    }
     
     return baseChats;
   });
@@ -121,25 +126,12 @@ export default function WhatsAppSimulator() {
     }
   }, [chats]);
 
-  const [jumpToData, setJumpToData] = useState<{ phone: string; name: string; source?: string } | null>(() => {
-    const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
-    if (jumpTo) {
-      localStorage.removeItem('wa_whatsapp_jump_to_chat');
-      return JSON.parse(jumpTo);
-    }
-    return null;
-  });
+  const [jumpToData, setJumpToData] = useState<{ phone: string; name: string; source?: string } | null>(initialJumpFromCRM);
 
   const [activeChatId, setActiveChatId] = useState<string | null>(() => {
-    // Priority 1: Check for a jump request from CRM
-    const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
-    if (jumpTo) {
-      try {
-        const data = JSON.parse(jumpTo);
-        return data.phone;
-      } catch (e) {}
+    if (initialJumpFromCRM?.phone) {
+      return initialJumpFromCRM.phone;
     }
-    // Priority 2: Check for last active chat
     return localStorage.getItem('wa_active_chat_id');
   });
 
@@ -161,6 +153,17 @@ export default function WhatsAppSimulator() {
   useEffect(() => {
     if (jumpToData) {
       const { phone, name, source } = jumpToData;
+      
+      // 1. Unhide the chat if it was previously deleted/hidden
+      setDeletedChatIds(prev => {
+        const filtered = prev.filter(id => id !== phone);
+        if (filtered.length !== prev.length) {
+          localStorage.setItem('wa_deleted_chats', JSON.stringify(filtered));
+        }
+        return filtered;
+      });
+
+      // 2. Ensure chat exists in the list
       setChats(prev => {
         const existing: any = prev[phone] || { 
           name: name || phone.split('@')[0],
@@ -180,14 +183,26 @@ export default function WhatsAppSimulator() {
         };
       });
       
-      // Force set active chat
+      // 3. Force set active chat and show CRM panel
       setActiveChatId(phone);
+      setShowCRMDetails(true);
       
-      // Clear the jump data
+      // 4. Clear the jump data
       setJumpToData(null);
       localStorage.removeItem('wa_whatsapp_jump_to_chat');
+      console.log("Salto do CRM processado com sucesso para:", phone);
     }
   }, [jumpToData, currentUser]);
+
+  // Auto-scroll the active chat in the sidebar into view
+  useEffect(() => {
+    if (activeChatId) {
+      const activeEl = document.getElementById(`sidebar-chat-${activeChatId}`);
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }, [activeChatId]);
 
   useEffect(() => {
     try {
@@ -1179,6 +1194,7 @@ export default function WhatsAppSimulator() {
               return (
                 <div 
                   key={id}
+                  id={`sidebar-chat-${id}`}
                   onClick={() => setActiveChatId(id)}
                   className={`flex items-start gap-3 px-4 py-3.5 cursor-pointer border-b border-neutral-100 relative group transition-all ${activeChatId === id ? 'bg-[#ebebeb] border-l-4 border-[#128C7E]' : 'hover:bg-neutral-50'}`}
                 >
@@ -1227,14 +1243,14 @@ export default function WhatsAppSimulator() {
                     </p>
                   </div>
 
-                  {/* Quick Action Overlay (Delete / Archive option) */}
-                  <div className="absolute right-3 bottom-3 flex items-center bg-transparent group-hover:block hidden transition-all z-10">
+                  {/* Quick Action Overlay (Delete / Archive option) - Always visible for better accessibility */}
+                  <div className="absolute right-2 top-2 flex items-center bg-transparent z-10">
                     <button
                       onClick={(e) => handleDeleteChat(e, id)}
-                      className="p-2 bg-white/90 hover:bg-red-50 text-neutral-400 hover:text-red-600 rounded-lg border border-neutral-200 hover:border-red-200 shadow-md transition-all scale-95 hover:scale-105 active:scale-95 duration-100"
+                      className="p-2 sm:p-1.5 bg-white sm:bg-white/90 hover:bg-red-50 text-neutral-500 hover:text-red-600 rounded-lg border border-neutral-200 hover:border-red-300 shadow-sm transition-all active:scale-90"
                       title="Apagar e ocultar número"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={14} className="sm:size-3.5" />
                     </button>
                   </div>
                 </div>
