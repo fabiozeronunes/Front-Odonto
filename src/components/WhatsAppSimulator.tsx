@@ -115,16 +115,19 @@ export default function WhatsAppSimulator() {
     if (jumpToData) {
       const { phone, name } = jumpToData;
       setChats(prev => {
-        if (prev[phone]) return prev;
+        // Always ensure the chat is updated with the jumpTo name if needed
         return { 
           ...prev, 
-          [phone]: { name, lastMessage: 'Início do atendimento', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), messages: [] } 
+          [phone]: { 
+            ...(prev[phone] || { lastMessage: 'Início do atendimento', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), messages: [] }),
+            name
+          } 
         };
       });
       setActiveChatId(phone);
       setJumpToData(null);
     }
-  }, [chats, jumpToData]);
+  }, [jumpToData]);
 
   useEffect(() => {
     try {
@@ -421,12 +424,15 @@ export default function WhatsAppSimulator() {
     if (!chatId) return null;
     const phone = chatId.split('@')[0];
     const cleanPhoneDigits = phone.replace(/\D/g, '');
+    console.log("Searching for patient for chat:", chatId, "cleanPhoneDigits:", cleanPhoneDigits);
     if (!cleanPhoneDigits) return null;
 
     return patients.find(p => {
       const pPhone = p.phone || p.telefone || '';
       const cleanPPhone = pPhone.replace(/\D/g, '');
-      return cleanPPhone.endsWith(cleanPhoneDigits) || cleanPhoneDigits.endsWith(cleanPPhone);
+      const match = cleanPPhone.endsWith(cleanPhoneDigits) || cleanPhoneDigits.endsWith(cleanPPhone);
+      if (match) console.log("Found matching patient:", p.id, pPhone);
+      return match;
     });
   };
 
@@ -481,20 +487,31 @@ export default function WhatsAppSimulator() {
 
   // Update CRM stage directly (links tag update to CRM stage progression)
   const handleUpdateCRMStage = async (stage: string) => {
-    if (!activeChatId) return;
+    console.log("handleUpdateCRMStage clicked:", stage, "activeChatId:", activeChatId);
+    if (!activeChatId) {
+      console.error("handleUpdateCRMStage: no activeChatId");
+      return;
+    }
     const phone = activeChatId.split('@')[0];
     const activeChat = chats[activeChatId];
 
     try {
       if (matchedPatient) {
+        console.log("Updating existing patient:", matchedPatient.id);
         await updateDoc(doc(db, 'pacientes', matchedPatient.id), {
           status: stage,
           lastContactAt: serverTimestamp()
         });
       } else {
         // Create lead automatically on stage click if not registered yet
-        const clinicId = clinics[0]?.id || '';
+        const clinicId = clinics[0]?.id;
+        if (!clinicId) {
+           console.error("handleUpdateCRMStage: no clinicId found to create lead");                
+           alert("Erro: Clínica não encontrada. Configure uma clínica antes.");
+           return;
+        }                
         const nameToUse = editingPatientName.trim() || activeChat?.name || `+${phone}`;
+        console.log("Creating new lead:", nameToUse, phone);
         await addDoc(collection(db, 'pacientes'), {
           name: nameToUse,
           nome: nameToUse,
@@ -510,6 +527,7 @@ export default function WhatsAppSimulator() {
       }
     } catch (e) {
       console.error("Erro ao atualizar etapa de CRM:", e);
+      alert("Erro ao salvar no CRM. Verifique o console.");
     }
   };
 
@@ -691,12 +709,10 @@ export default function WhatsAppSimulator() {
         console.error("Erro ao salvar wa_crm_funnel_stages localmente:", e);
     }
 
-    setStageModalOpen(false);
-    setNewStageTitle('');
     setIsStageModalOpen(false);
+    setNewStageTitle('');
   };
 
-  // Edit an existing Funnel Stage in Firestore or local memory fallback
   const handleEditStage = async () => {
     if (!editingStage || !newStageTitle.trim()) return;
     if (currentUser) {
@@ -1285,7 +1301,7 @@ export default function WhatsAppSimulator() {
                   <div className="p-4 border-b border-neutral-100 bg-neutral-50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Tag size={16} className="text-[#128C7E]" />
-                      <h4 className="font-extrabold text-[#128C7E] text-xs uppercase tracking-wider">Integração CRM & Funil</h4>
+                      <h4 className="font-extrabold text-[#128C7E] text-xs uppercase tracking-wider">Integração CRM</h4>
                     </div>
                     <button 
                       onClick={() => setShowCRMDetails(false)}
@@ -1374,10 +1390,10 @@ export default function WhatsAppSimulator() {
                       </div>
 
                       {/* STAGEMENT / CRM FUNNEL PROGRESSION */}
-                      <div className="space-y-2.5">
+                      <div className="bg-neutral-50 border border-neutral-200/50 rounded-2xl p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider flex items-center gap-1">
-                            <span>Etapa do Funil de Clínicas</span>
+                            <span>ETAPAS DO FUNIL</span>
                           </label>
                           <button 
                             onClick={() => {
@@ -1394,7 +1410,7 @@ export default function WhatsAppSimulator() {
                           </button>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                        <div className="grid grid-cols-1 gap-2">
                           {crmStages.map((stg, colIdx) => {
                             const isCurrentStatus = matchedPatient?.status === stg.id || (matchedPatient?.status && (matchedPatient.status.endsWith(`_${stg.id}`) || stg.id.endsWith(`_${matchedPatient.status}`)));
                             const stageBgColor = getBgColorClass(stg.color);
@@ -1503,10 +1519,10 @@ export default function WhatsAppSimulator() {
                       </div>
 
                       {/* DENTAL SPECIFIC TARGETING TAGS */}
-                      <div className="space-y-2.5 pt-1 border-t border-neutral-100">
+                      <div className="bg-neutral-50 border border-neutral-200/50 rounded-2xl p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="block text-[10px] font-black text-neutral-400 uppercase tracking-wider">
-                            Tags de Interesse Clínico
+                            TAGS DE INTERESSE
                           </span>
                           <button 
                             onClick={() => {
@@ -1540,7 +1556,7 @@ export default function WhatsAppSimulator() {
                             </button>
                           </div>
                         ) : (
-                          <div className="flex flex-col gap-1.5 max-h-[160px] overflow-y-auto pr-1">
+                          <div className="flex flex-wrap gap-1.5 overflow-hidden">
                             {dynamicTags.map((tag) => {
                               const currentInterestList = matchedPatient?.interestedIn || '';
                               const isTagged = currentInterestList.split(',').map(t => t.trim()).includes(tag.label);
@@ -1549,10 +1565,10 @@ export default function WhatsAppSimulator() {
                                 <div 
                                   key={`${tag.type}-${tag.id}`}
                                   className={`
-                                    group flex items-center justify-between p-2 rounded-xl border transition-all text-xs
+                                    group flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all text-[10px] font-bold
                                     ${isTagged 
-                                      ? 'bg-emerald-50/50 border-emerald-500' 
-                                      : 'bg-white border-neutral-200'}
+                                      ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm' 
+                                      : 'bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300'}
                                   `}
                                 >
                                   <button

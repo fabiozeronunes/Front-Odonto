@@ -633,7 +633,7 @@ export default function AIConnections() {
                               className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-neutral-300"
                             />
                             <div>
-                              <p className="text-xs font-bold">Triagem do CRM & Funil inteligente</p>
+                              <p className="text-xs font-bold">Triagem do CRM inteligente</p>
                               <p className="text-[10px] font-normal text-neutral-500">Categorizar leads, resumir histórico odontológico e extrair diagnóstico.</p>
                             </div>
                           </div>

@@ -11,8 +11,17 @@ import {
   X,
   User
 } from 'lucide-react';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer 
+} from 'recharts';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, serverTimestamp, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { Patient, Clinic } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/FirestoreUtils';
 
@@ -62,7 +71,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
     setDraggedStageIdx(index);
   };
 
-  const handleDragPatientStart = (e: React.DragEvent, id: string) => {
+  const handleDragPatientStart = (e: any, id: string) => {
     e.stopPropagation();
     e.dataTransfer.setData('text/plain', 'patient_' + id);
     setDraggedPatientId(id);
@@ -180,6 +189,11 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', clinicId: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const chartData = stages.map(stage => ({
+    name: stage.title,
+    leads: patients.filter(p => p && (p.status || 'lead') === stage.id).length
+  }));
+
   useEffect(() => {
     let unsubClinics: () => void;
     let unsubPacientes: () => void;
@@ -273,23 +287,21 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   };
 
   const handleDeleteLead = async (e: React.MouseEvent, patientId: string) => {
+    e.preventDefault();
     e.stopPropagation();
     
-    if (!patientId) {
-      console.error("Patient ID is missing!");
-      return;
-    }
+    if (!patientId) return;
 
-    if (!confirm("Tem certeza que deseja excluir este lead?")) return;
+    if (!window.confirm("Deseja realmente excluir este lead permanentemente?")) return;
     
-    // Immediate local update for better UX, also cleaning up any falsy records
-    setPatients(prev => prev.filter(p => p && p.id && p.id !== patientId));
+    // Optimistic local update
+    setPatients(prev => prev.filter(p => p?.id !== patientId));
 
     try {
       await deleteDoc(doc(db, 'pacientes', patientId));
     } catch (error) {
-      console.error("Error deleting lead from Firestore:", error);
-      alert("Erro ao excluir do banco de dados.");
+      console.error("Error deleting lead:", error);
+      alert("Erro ao excluir do banco de dados. Tente novamente.");
     }
   };
 
@@ -327,6 +339,20 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
 
   return (
     <div className="space-y-6">
+      <div className="bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm">
+        <h3 className="font-semibold text-neutral-800 mb-4">Pipeline de Leads</h3>
+        <div className="h-48">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis fontSize={12} tickLine={false} axisLine={false} />
+              <Tooltip cursor={{fill: '#f5f5f5'}} />
+              <Bar dataKey="leads" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
       <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
@@ -395,8 +421,12 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                 className="bg-neutral-100/50 p-3 rounded-2xl min-h-[500px] space-y-3 border border-dashed border-neutral-200 hover:bg-neutral-100/80 transition-all duration-150"
               >
                 {filteredPatients.filter(p => p && p.status && isMatchStage(p.status, column.id)).map((patient, idx) => (
-                  <div 
-                    key={`${patient.id}-${idx}`} 
+                  <motion.div 
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    key={patient.id} 
                     draggable
                     onDragStart={(e) => handleDragPatientStart(e, patient.id)}
                     className="bg-white p-4 rounded-xl shadow-xs border border-neutral-200 cursor-grab active:cursor-grabbing group hover:border-blue-400 hover:shadow-xs transition-all duration-150"
@@ -443,10 +473,21 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                     <div className="flex items-center justify-between pt-3 border-t border-neutral-50">
                       <div className="flex -space-x-2">
                         <button 
-                          onClick={() => {
+                          onClick={async () => {
                             if (patient.phone) {
                               const cleanPhone = patient.phone.replace(/\D/g, '');
                               const jid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
+
+                              // Ensure persistence before navigation
+                              try {
+                                await updateDoc(doc(db, 'pacientes', patient.id), {
+                                  lastContactAt: serverTimestamp()
+                                });
+                                console.log("Updated patient lastContactAt before redirect:", patient.id);
+                              } catch (err) {
+                                console.error("Error updating patient before redirect:", err);
+                              }
+                              
                               localStorage.setItem('wa_whatsapp_jump_to_chat', JSON.stringify({ phone: jid, name: patient.name }));
                               onNavigate('whatsapp');
                             }
@@ -464,12 +505,15 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                       </span>
                       <button 
                         onClick={(e) => handleDeleteLead(e, patient.id)}
-                        className="text-[9px] text-red-500 hover:text-red-700 underline font-bold uppercase"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        draggable="false"
+                        onDragStart={(e) => e.stopPropagation()}
+                        className="text-[10px] text-red-500 hover:text-red-700 underline font-bold uppercase transition-colors"
                       >
                         Excluir
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             </motion.div>
