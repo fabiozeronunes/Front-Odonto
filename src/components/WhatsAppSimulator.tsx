@@ -22,7 +22,8 @@ import {
   User,
   ExternalLink,
   ChevronRight,
-  Info
+  Info,
+  GripVertical
 } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { 
@@ -78,14 +79,36 @@ const STAGE_COLOR_PRESETS = [
 ];
 
 export default function WhatsAppSimulator() {
-  const [chats, setChats] = useState<Record<string, { name: string; lastMessage: string; timestamp: string; messages: Message[] }>>(() => {
+  const [chats, setChats] = useState<Record<string, { name: string; lastMessage: string; timestamp: string; messages: Message[]; source?: string }>>(() => {
+    let baseChats: any = {};
     try {
       const saved = localStorage.getItem('wa_simulator_chats');
-      return saved ? JSON.parse(saved) : {};
+      baseChats = saved ? JSON.parse(saved) : {};
     } catch (e) {
       console.error("Erro ao ler wa_simulator_chats:", e);
-      return {};
     }
+
+    try {
+      const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
+      if (jumpTo) {
+        const data = JSON.parse(jumpTo);
+        if (data.phone) {
+          if (!baseChats[data.phone]) {
+            baseChats[data.phone] = {
+              name: data.name || data.phone.split('@')[0],
+              lastMessage: 'Atendimento iniciado pelo CRM',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              messages: [],
+              source: data.source || 'CRM'
+            };
+          } else if (data.name) {
+            baseChats[data.phone].name = data.name;
+          }
+        }
+      }
+    } catch (e) {}
+    
+    return baseChats;
   });
 
   useEffect(() => {
@@ -98,7 +121,7 @@ export default function WhatsAppSimulator() {
     }
   }, [chats]);
 
-  const [jumpToData, setJumpToData] = useState<{ phone: string; name: string } | null>(() => {
+  const [jumpToData, setJumpToData] = useState<{ phone: string; name: string; source?: string } | null>(() => {
     const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
     if (jumpTo) {
       localStorage.removeItem('wa_whatsapp_jump_to_chat');
@@ -108,38 +131,18 @@ export default function WhatsAppSimulator() {
   });
 
   const [activeChatId, setActiveChatId] = useState<string | null>(() => {
+    // Priority 1: Check for a jump request from CRM
+    const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
+    if (jumpTo) {
+      try {
+        const data = JSON.parse(jumpTo);
+        return data.phone;
+      } catch (e) {}
+    }
+    // Priority 2: Check for last active chat
     return localStorage.getItem('wa_active_chat_id');
   });
 
-  useEffect(() => {
-    if (jumpToData) {
-      const { phone, name } = jumpToData;
-      setChats(prev => {
-        // Always ensure the chat is updated with the jumpTo name if needed
-        return { 
-          ...prev, 
-          [phone]: { 
-            ...(prev[phone] || { lastMessage: 'Início do atendimento', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), messages: [] }),
-            name
-          } 
-        };
-      });
-      setActiveChatId(phone);
-      setJumpToData(null);
-    }
-  }, [jumpToData]);
-
-  useEffect(() => {
-    try {
-      if (activeChatId) {
-        localStorage.setItem('wa_active_chat_id', activeChatId);
-      } else {
-        localStorage.removeItem('wa_active_chat_id');
-      }
-    } catch (e) {
-      console.error("Erro ao persistir wa_active_chat_id:", e);
-    }
-  }, [activeChatId]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -154,6 +157,49 @@ export default function WhatsAppSimulator() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    if (jumpToData) {
+      const { phone, name, source } = jumpToData;
+      setChats(prev => {
+        const existing: any = prev[phone] || { 
+          name: name || phone.split('@')[0],
+          lastMessage: 'Início do atendimento pelo CRM', 
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
+          messages: [],
+          source: source || 'CRM'
+        };
+        
+        return { 
+          ...prev, 
+          [phone]: { 
+            ...existing,
+            name: name || existing.name,
+            source: source || existing.source || 'CRM'
+          } 
+        };
+      });
+      
+      // Force set active chat
+      setActiveChatId(phone);
+      
+      // Clear the jump data
+      setJumpToData(null);
+      localStorage.removeItem('wa_whatsapp_jump_to_chat');
+    }
+  }, [jumpToData, currentUser]);
+
+  useEffect(() => {
+    try {
+      if (activeChatId) {
+        localStorage.setItem('wa_active_chat_id', activeChatId);
+      } else {
+        localStorage.removeItem('wa_active_chat_id');
+      }
+    } catch (e) {
+      console.error("Erro ao persistir wa_active_chat_id:", e);
+    }
+  }, [activeChatId]);
 
   // Deleted numbers cache to persist hide/delete filter
   const [deletedChatIds, setDeletedChatIds] = useState<string[]>(() => {
@@ -1482,11 +1528,13 @@ export default function WhatsAppSimulator() {
                                   )}
                                 </button>
 
-                                {crmStages.length > 0 && (
-                                  <div className="flex gap-1 shrink-0 pr-1 ml-1">
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
+                                <div className="flex items-center gap-1.5 ml-1 pr-1 shrink-0">
+                                  <div className="p-1 text-neutral-300 hover:text-neutral-500 cursor-grab active:cursor-grabbing">
+                                    <GripVertical size={12} />
+                                  </div>
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                         setEditingStage(stg);
                                         setNewStageTitle(stg.title);
                                         setNewStageColor(stg.color);
@@ -1511,12 +1559,11 @@ export default function WhatsAppSimulator() {
                                       <Trash2 size={12} />
                                     </button>
                                   </div>
-                                )}
-                              </div>
-                            );
-                          })}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
 
                       {/* DENTAL SPECIFIC TARGETING TAGS */}
                       <div className="bg-neutral-50 border border-neutral-200/50 rounded-2xl p-4 space-y-3">

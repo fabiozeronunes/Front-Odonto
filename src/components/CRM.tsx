@@ -9,7 +9,9 @@ import {
   Plus,
   Loader2,
   X,
-  User
+  User,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -21,7 +23,7 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, serverTimestamp, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, serverTimestamp, deleteDoc, getDocs, writeBatch, setDoc } from 'firebase/firestore';
 import { Patient, Clinic } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/FirestoreUtils';
 
@@ -38,6 +40,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
+  const [editingStage, setEditingStage] = useState<any | null>(null);
   const [newStageTitle, setNewStageTitle] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -174,15 +177,72 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
 
   const addStage = () => {
     if (!newStageTitle.trim()) return;
-    const newStage = {
-        id: `stage_${Date.now()}`,
-        title: newStageTitle.trim(),
-        color: 'bg-neutral-500',
-        order: stages.length
-    };
-    updateStages([...stages, newStage]);
+    
+    if (editingStage) {
+      const updated = stages.map(s => s.id === editingStage.id ? { ...s, title: newStageTitle.trim() } : s);
+      updateStages(updated);
+      
+      // Update in Firestore
+      if (auth.currentUser) {
+        updateDoc(doc(db, 'funnel_stages', editingStage.id), {
+          title: newStageTitle.trim()
+        }).catch(err => console.error("Error updating stage:", err));
+      }
+      
+      setEditingStage(null);
+    } else {
+      const newStage = {
+          id: `stage_${Date.now()}`,
+          title: newStageTitle.trim(),
+          color: 'bg-neutral-500',
+          order: stages.length
+      };
+      
+      const updated = [...stages, newStage];
+      updateStages(updated);
+      
+      // Create in Firestore
+      if (auth.currentUser) {
+        const stageRef = doc(collection(db, 'funnel_stages'), `${auth.currentUser.uid}_${newStage.id}`);
+        setDoc(stageRef, {
+          title: newStage.title,
+          color: newStage.color,
+          order: newStage.order,
+          ownerId: auth.currentUser.uid,
+          createdAt: new Date().toISOString()
+        }).catch(err => console.error("Error creating stage:", err));
+      }
+    }
+    
     setIsStageModalOpen(false);
     setNewStageTitle('');
+  };
+
+  const deleteStage = async (id: string) => {
+    if (!window.confirm("Deseja realmente excluir esta etapa? Pacientes nesta etapa serão movidos para a primeira etapa disponível.")) return;
+    
+    const targetStage = stages.find(s => s.id === id);
+    if (!targetStage) return;
+
+    const filteredStages = stages.filter(s => s.id !== id);
+    const defaultStageId = filteredStages[0]?.id || 'lead';
+
+    // Move patients in this stage to the first available stage
+    const pToMove = patients.filter(p => isMatchStage(p.status, id));
+    for (const p of pToMove) {
+      await handleUpdateStatus(p.id, defaultStageId);
+    }
+
+    updateStages(filteredStages);
+
+    // Delete in Firestore
+    if (auth.currentUser) {
+      try {
+        await deleteDoc(doc(db, 'funnel_stages', id));
+      } catch (err) {
+        console.error("Error deleting stage from Firestore:", err);
+      }
+    }
   };
 
   // Form State
@@ -410,9 +470,31 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                   <div className={`w-3 h-3 rounded-full ${column.color || 'bg-blue-500'}`} />
                   <h4 className="font-extrabold text-xs text-neutral-500 uppercase tracking-wider">{column.title}</h4>
                 </div>
-                <span className="text-xs font-black text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full">
-                  {filteredPatients.filter(p => isMatchStage(p.status, column.id)).length}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingStage(column);
+                      setNewStageTitle(column.title);
+                      setIsStageModalOpen(true);
+                    }}
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded"
+                  >
+                    <Edit2 size={12} />
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteStage(column.id);
+                    }}
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                  <span className="text-xs font-black text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full ml-1">
+                    {filteredPatients.filter(p => isMatchStage(p.status, column.id)).length}
+                  </span>
+                </div>
               </div>
 
               <div 
@@ -475,20 +557,30 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                         <button 
                           onClick={async () => {
                             if (patient.phone) {
-                              const cleanPhone = patient.phone.replace(/\D/g, '');
+                              // Ensure number has country code (default to 55 if missing and looks like BR number)
+                              let cleanPhone = patient.phone.replace(/\D/g, '');
+                              if (cleanPhone.length >= 10 && cleanPhone.length <= 11 && !cleanPhone.startsWith('55')) {
+                                cleanPhone = '55' + cleanPhone;
+                              }
                               const jid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
 
                               // Ensure persistence before navigation
                               try {
                                 await updateDoc(doc(db, 'pacientes', patient.id), {
-                                  lastContactAt: serverTimestamp()
+                                  lastContactAt: serverTimestamp(),
+                                  phone: jid // Store as JID for better integration
                                 });
-                                console.log("Updated patient lastContactAt before redirect:", patient.id);
+                                console.log("Updated patient lastContactAt and JID before redirect:", patient.id);
                               } catch (err) {
                                 console.error("Error updating patient before redirect:", err);
                               }
                               
-                              localStorage.setItem('wa_whatsapp_jump_to_chat', JSON.stringify({ phone: jid, name: patient.name }));
+                              localStorage.setItem('wa_active_chat_id', jid);
+                              localStorage.setItem('wa_whatsapp_jump_to_chat', JSON.stringify({ 
+                                phone: jid, 
+                                name: patient.name,
+                                source: patient.source || 'CRM'
+                              }));
                               onNavigate('whatsapp');
                             }
                           }}
@@ -623,18 +715,33 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6"
             >
-              <h3 className="text-lg font-bold mb-4">Adicionar Etapa</h3>
+              <h3 className="text-lg font-bold mb-4">{editingStage ? 'Editar Etapa' : 'Adicionar Etapa'}</h3>
               <input 
                 autoFocus
                 type="text" 
                 placeholder="Título da etapa"
-                className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-2xl mb-4"
+                className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-2xl mb-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/20"
                 value={newStageTitle}
                 onChange={(e) => setNewStageTitle(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addStage()}
               />
               <div className="flex gap-2 justify-end">
-                <button onClick={() => setIsStageModalOpen(false)} className="px-4 py-2 bg-neutral-100 rounded-xl">Cancelar</button>
-                <button onClick={addStage} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold">Salvar</button>
+                <button 
+                  onClick={() => {
+                    setIsStageModalOpen(false);
+                    setEditingStage(null);
+                    setNewStageTitle('');
+                  }} 
+                  className="px-4 py-2 bg-neutral-100 rounded-xl text-xs font-bold text-neutral-600 hover:bg-neutral-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={addStage} 
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs shadow-md hover:bg-blue-700 active:scale-95 transition-all"
+                >
+                  {editingStage ? 'Salvar Edição' : 'Salvar Etapa'}
+                </button>
               </div>
             </motion.div>
           </div>

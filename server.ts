@@ -12,17 +12,26 @@ import makeWASocket, {
   useMultiFileAuthState, 
   fetchLatestBaileysVersion,
   WAMessage,
-  MessageUpsertType
+  MessageUpsertType,
+  Browsers
 } from "@whiskeysockets/baileys";
 import pino from "pino";
 import QRCode from "qrcode";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
+// import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
 
 dotenv.config();
 
 // Initialize Firebase Admin
+let firebaseConfig;
+try {
+  firebaseConfig = JSON.parse(fs.readFileSync("./firebase-applet-config.json", "utf-8"));
+} catch (e) {
+  console.error("Critical: Failed to read firebase-applet-config.json", e);
+  process.exit(1);
+}
+
 if (!getApps().length) {
   initializeApp({
     projectId: firebaseConfig.projectId,
@@ -36,6 +45,15 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/api/ws' });
 
 app.use(express.json());
+
+// Health Check
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Initialize Gemini
 const ai = new GoogleGenAI({
@@ -170,43 +188,91 @@ async function connectToWhatsApp() {
   connectionStatus = 'connecting';
   broadcast({ type: 'status', status: 'connecting' });
 
+  // Cleanup old socket if exists
+  if (sock) {
+    debugLog("Cleaning up existing socket before new connection attempt");
+    try {
+      sock.ev.removeAllListeners('connection.update');
+      sock.ev.removeAllListeners('creds.update');
+      sock.ws?.close();
+      sock.end(undefined);
+    } catch (e) {
+      debugLog("Error during socket cleanup: " + (e as any).message);
+    }
+    sock = null;
+  }
+
   try {
+    // Ensure wa_auth exists and is writable
+    if (!fs.existsSync('wa_auth')) {
+      fs.mkdirSync('wa_auth', { recursive: true });
+    }
+    
     const { state, saveCreds } = await useMultiFileAuthState('wa_auth');
     
+    // Default version to use if fetch fails or hangs
     let version = [2, 3000, 1015901307] as [number, number, number];
     try {
-      const latest = await fetchLatestBaileysVersion();
-      debugLog("Fetched latest version: " + latest.version.join('.'));
-      version = latest.version;
+      // Add a timeout to version fetching to prevent hanging indefinitely
+      const latest = await Promise.race([
+        fetchLatestBaileysVersion(),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Timeout fetching version')), 5000))
+      ]);
+      if (latest) {
+        debugLog("Fetched latest version: " + latest.version.join('.'));
+        version = latest.version;
+      }
     } catch (e) {
-      debugLog("Failed to fetch version");
+      debugLog("Failed to fetch version or timeout, using default: " + (e as any).message);
     }
 
     sock = makeWASocket({
       version,
-      printQRInTerminal: true,
+      printQRInTerminal: false, // Avoid overhead in server logs
       auth: state,
-      logger: pino({ level: 'debug' }),
-      browser: ['OdontoAI', 'Chrome', '1.0.0'],
-      syncFullHistory: false
+      logger: pino({ level: 'error' }), // Show errors but hide noise
+      browser: ['OdontoAI', 'Chrome', '120.0.0'],
+      syncFullHistory: false,
+      connectTimeoutMs: 60000, // Increase timeout for slower networks
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 30000,
+      generateHighQualityLinkPreview: false,
+      markOnlineOnConnect: true
     });
 
+    // Safety timeout to reset isConnecting if no events fire for a long time
+    const safetyTimer = setTimeout(() => {
+      if (isConnecting && connectionStatus === 'connecting') {
+        debugLog("Safety timeout: resetting isConnecting after 45s of silence");
+        isConnecting = false;
+        // Don't change connectionStatus here, let the user retry or let baileys continue
+      }
+    }, 45000);
+
     sock.ev.on('connection.update', async (update: any) => {
-      debugLog("connection update: " + JSON.stringify({ ...update, qr: update.qr ? 'YES' : 'NO' }));
       const { connection, lastDisconnect, qr } = update;
       
+      if (qr || connection === 'open' || connection === 'close') {
+        clearTimeout(safetyTimer);
+      }
+
+      debugLog("connection update: " + JSON.stringify({ ...update, qr: (qr ? 'YES' : 'NO') }));
+      
       if (qr) {
-        debugLog("Generating QR Code");
+        debugLog("Generating QR Code from update.qr");
         try {
           qrCode = await QRCode.toDataURL(qr);
-          debugLog("QR Code generated successfully");
+          debugLog("QR Code generated successfully as base64");
+          
+          connectionStatus = 'qr';
+          isConnecting = false;
+          broadcast({ type: 'status', status: 'qr', qr: qrCode });
         } catch (e) {
           debugLog("QR Code generation error: " + (e as any).message);
-          throw e;
+          isConnecting = false;
+          connectionStatus = 'disconnected';
+          broadcast({ type: 'status', status: 'disconnected', error: 'Falha ao gerar QR Code' });
         }
-        connectionStatus = 'qr';
-        isConnecting = false;
-        broadcast({ type: 'status', status: 'qr', qr: qrCode });
       }
 
       if (connection === 'close') {
@@ -336,8 +402,11 @@ async function connectToWhatsApp() {
     sock.ev.on('creds.update', saveCreds);
 
   } catch (err: any) {
-    debugLog("Critical err: " + err.message);
+    debugLog("Critical err in connectToWhatsApp: " + err.message);
     console.error("Critical WhatsApp Initialization Error:", err);
+    isConnecting = false;
+    connectionStatus = 'disconnected';
+    broadcast({ type: 'status', status: 'disconnected', error: err.message });
   }
 
   sock?.ev?.on('messages.upsert', async (m: { messages: WAMessage[], type: MessageUpsertType }) => {

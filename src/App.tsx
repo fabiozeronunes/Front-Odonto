@@ -398,7 +398,7 @@ export default function App() {
     localStorage.setItem('logged_in_view', 'dashboard');
   };
 
-  if (loading && !user && view !== 'dashboard') {
+  if (loading && view === 'dashboard') {
     return (
       <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-4 max-w-sm text-center">
@@ -409,7 +409,7 @@ export default function App() {
             onClick={() => {
               setLoading(false);
             }}
-            className="mt-4 text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] hover:underline animate-bounce"
+            className="mt-4 text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] hover:underline animate-bounce cursor-pointer"
           >
             Fechar e Continuar
           </button>
