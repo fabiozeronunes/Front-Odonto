@@ -26,7 +26,8 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
   const [localDeletedGoogleIds, setLocalDeletedGoogleIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('agenda_deleted_google_ids');
-      return saved ? JSON.parse(saved) : [];
+      if (!saved || saved === 'undefined') return [];
+      return JSON.parse(saved);
     } catch {
       return [];
     }
@@ -83,7 +84,8 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
   const [reminderLogs, setReminderLogs] = useState<{ id: string; name: string; dateStr: string; timeStr: string; status: 'success' | 'error'; isSimulated: boolean; message: string }[]>(() => {
     try {
       const logs = localStorage.getItem('agenda_reminder_logs');
-      return logs ? JSON.parse(logs) : [];
+      if (!logs || logs === 'undefined') return [];
+      return JSON.parse(logs);
     } catch (e) {
       return [];
     }

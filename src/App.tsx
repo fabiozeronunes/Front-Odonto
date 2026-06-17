@@ -28,7 +28,7 @@ import {
   ChevronDown,
   TrendingUp
 } from 'lucide-react';
-import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db } from './lib/firebase';
+import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db, signInAnonymously } from './lib/firebase';
 import { User } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -136,10 +136,22 @@ export default function App() {
     let redirectChecking = sessionStorage.getItem('auth_in_progress') === 'true';
 
     // 1. Initial Auth Check and Persistence Listener
-    const unsubscribe = auth.onAuthStateChanged((u) => {
+    const unsubscribe = auth.onAuthStateChanged(async (u) => {
       console.log("Auth state changed:", u?.email || "No user");
       
       const isDemoLoggedIn = localStorage.getItem('google_demo_logged_in_v1') === 'true';
+      
+      // Auto-login anonymously if in demo mode but no Firebase user session exists
+      if (isDemoLoggedIn && !u) {
+        console.log("[Auth Trace] Demo mode detected with no Firebase session. Signing in anonymously...");
+        try {
+          await signInAnonymously(auth);
+          return; // The listener will fire again once signs in
+        } catch (err) {
+          console.error("[Auth Trace] Failed to sign in anonymously for demo mode:", err);
+        }
+      }
+
       if (isDemoLoggedIn || (u && u.isAnonymous)) {
         console.log("[Auth Trace] Demo or Anonymous user is logged in, overriding details with mock user.");
         const mockGoogleUser = {

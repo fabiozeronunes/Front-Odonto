@@ -30,6 +30,7 @@ import {
   collection, 
   addDoc, 
   setDoc,
+  getDocs,
   serverTimestamp, 
   query, 
   where, 
@@ -80,12 +81,14 @@ const STAGE_COLOR_PRESETS = [
 
 export default function WhatsAppSimulator() {
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
   
   // Pre-read jump data to avoid race conditions in state initializers
   const initialJumpFromCRM = (() => {
     try {
       const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
-      return jumpTo ? JSON.parse(jumpTo) : null;
+      if (!jumpTo || jumpTo === 'undefined') return null;
+      return JSON.parse(jumpTo);
     } catch (e) {
       return null;
     }
@@ -102,7 +105,9 @@ export default function WhatsAppSimulator() {
     let baseChats: any = {};
     try {
       const saved = localStorage.getItem('wa_simulator_chats');
-      baseChats = saved ? JSON.parse(saved) : {};
+      if (saved && saved !== 'undefined') {
+        baseChats = JSON.parse(saved);
+      }
     } catch (e) {
       console.error("Erro ao ler wa_simulator_chats:", e);
     }
@@ -348,7 +353,7 @@ export default function WhatsAppSimulator() {
   const [crmStages, setCrmStages] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('wa_crm_funnel_stages');
-      return saved ? JSON.parse(saved) : CRM_STAGES;
+      return (saved && saved !== 'undefined') ? JSON.parse(saved) : CRM_STAGES;
     } catch (e) {
       return CRM_STAGES;
     }
@@ -358,6 +363,7 @@ export default function WhatsAppSimulator() {
   const [editingStage, setEditingStage] = useState<any | null>(null);
   const [newStageTitle, setNewStageTitle] = useState('');
   const [newStageColor, setNewStageColor] = useState('bg-blue-500 text-blue-600 ring-blue-100');
+  const [isOverStageBtn, setIsOverStageBtn] = useState(false);
 
   // Sync auth and Firestore patients/clinics in real-time
   useEffect(() => {
@@ -424,7 +430,11 @@ export default function WhatsAppSimulator() {
         setProcedures([]);
         try {
           const saved = localStorage.getItem('wa_crm_funnel_stages');
-          setCrmStages(saved ? JSON.parse(saved) : CRM_STAGES);
+          if (saved && saved !== 'undefined') {
+            setCrmStages(JSON.parse(saved));
+          } else {
+            setCrmStages(CRM_STAGES);
+          }
         } catch (e) {
           setCrmStages(CRM_STAGES);
         }
@@ -507,14 +517,36 @@ export default function WhatsAppSimulator() {
                 };
                 newChats[jid] = chatData;
 
-                // Sync chat to Firestore
+                // Sync chat to Firestore - Only if not fromMe if it's a new contact?
+                // Actually Baileys sends history. We should check if it has interactions.
                 if (currentUser) {
                   const cleanedJid = jid.replace(/[^a-zA-Z0-9]/g, '_');
+                  // Valor default para interacted. Se conversationTimestamp existe, provavelmente houve troca.
+                  const interacted = c.conversationTimestamp ? true : false;
+                  
+                  // O usuário solicitou que apenas contatos INICIADOS pelo cliente sejam salvos no Firestore
+                  // Se interacted for false (contato importado sem mensagens prévias trocadas), evitamos o salvamento inicial
+                  if (!interacted) {
+                    console.log("[WhatsApp Sync] Ignorando contato sem interação prévia:", jid);
+                    return;
+                  }
+
                   setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), {
                     chatJid: jid,
                     name: chatData.name,
                     lastMessage: chatData.lastMessage,
                     timestamp: chatData.timestamp,
+                    interacted: interacted,
+                    ownerId: currentUser.uid,
+                    updatedAt: serverTimestamp()
+                  }, { merge: true });
+
+                  // Também salvar em whatsapp_contacts como solicitado pela estrutura
+                  setDoc(doc(db, 'whatsapp_contacts', `${currentUser.uid}_${cleanedJid}`), {
+                    chatJid: jid,
+                    name: chatData.name,
+                    phone: phone,
+                    interacted: interacted,
                     ownerId: currentUser.uid,
                     updatedAt: serverTimestamp()
                   }, { merge: true });
@@ -578,13 +610,21 @@ export default function WhatsAppSimulator() {
 
             // Update Chat header in Firestore
             const cleanedJid = remoteJid.replace(/[^a-zA-Z0-9]/g, '_');
-            setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), {
+            const chatUpdate: any = {
               chatJid: remoteJid,
               lastMessage: data.content,
               timestamp: newMsg.timestamp,
               ownerId: currentUser.uid,
               updatedAt: serverTimestamp()
-            }, { merge: true });
+            };
+            
+            // Se mensagem veio do usuário (cliente), marcar como interagido
+            if (data.role === 'user') {
+              chatUpdate.interacted = true;
+            }
+
+            setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), chatUpdate, { merge: true });
+            setDoc(doc(db, 'whatsapp_contacts', `${currentUser.uid}_${cleanedJid}`), chatUpdate, { merge: true });
           }
 
           setChats(prev => {
@@ -1080,37 +1120,43 @@ export default function WhatsAppSimulator() {
     setChatToDelete(id);
   };
 
-  const confirmDeleteChat = async () => {
-    if (!chatToDelete || !currentUser) return;
-    const id = chatToDelete;
+  const handleClearAllChats = async () => {
+    if (!currentUser || !window.confirm("Tem certeza que deseja apagar TODOS os contatos e mensagens sincronizados? Esta ação não pode ser desfeita.")) return;
     
-    // 1. Find corresponding patient by matching phone number
-    const matchedPt = findPatientForChat(id);
-    if (matchedPt && matchedPt.id) {
-      try {
-        await deleteDoc(doc(db, 'pacientes', matchedPt.id));
-      } catch (err) {
-        console.error("Erro ao deletar lead/contato no Firestore:", err);
-      }
-    }
-
-    // 2. Hide chat from WhatsApp list globally via Firestore
+    setLoading(true);
     try {
-      const deletedDocId = `${currentUser.uid}_${id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      await setDoc(doc(db, 'deleted_chats', deletedDocId), {
-        ownerId: currentUser.uid,
-        chatJid: id,
-        deletedAt: new Date().toISOString()
-      }, { merge: true });
+      // 1. Buscar todos os chats do usuário
+      const chatsRef = collection(db, 'whatsapp_chats');
+      const qChats = query(chatsRef, where('ownerId', '==', currentUser.uid));
+      const chatDocs = await getDocs(qChats);
       
-      // Forçar atualização local imediata para feedback instantâneo
-      setDeletedChatIds(prev => [...new Set([...prev, id])]);
+      // 2. Buscar todas as mensagens do usuário
+      const msgsRef = collection(db, 'whatsapp_messages');
+      const qMsgs = query(msgsRef, where('ownerId', '==', currentUser.uid));
+      const msgDocs = await getDocs(qMsgs);
+
+      // 3. Buscar chats escondidos/deletados
+      const deletedRef = collection(db, 'deleted_chats');
+      const qDeleted = query(deletedRef, where('ownerId', '==', currentUser.uid));
+      const deletedDocs = await getDocs(qDeleted);
+
+      // 4. Deletar chats em lote
+      const deletePromises = [
+        ...chatDocs.docs.map(d => deleteDoc(d.ref)),
+        ...msgDocs.docs.map(d => deleteDoc(d.ref)),
+        ...deletedDocs.docs.map(d => deleteDoc(d.ref))
+      ];
       
-      if (activeChatId === id) {
-        setActiveChatId(null);
-      }
-      
-      // Gatilho de sincronização global (App.tsx versioning)
+      await Promise.all(deletePromises);
+
+      // 5. Limpar estado local
+      setChats({});
+      setDeletedChatIds([]);
+      setActiveChatId(null);
+      localStorage.removeItem('whatsapp_simulator_chats');
+      localStorage.removeItem('wa_deleted_chats');
+
+      // 6. Trigger global sync
       const syncRef = doc(db, 'system', `sync_${currentUser.uid}`);
       await setDoc(syncRef, { 
         timestamp: Date.now().toString(),
@@ -1118,12 +1164,129 @@ export default function WhatsAppSimulator() {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      console.log("[WhatsApp] Chat excluído e sincronizado:", id);
+      alert("Histórico de WhatsApp limpo com sucesso.");
     } catch (err) {
-      console.error("Erro ao sincronizar exclusão de chat:", err);
+      console.error("Erro ao limpar histórico:", err);
+      alert("Erro ao apagar dados. Tente novamente.");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleBulkCleanupInteracted = async () => {
+    if (!currentUser || !window.confirm("Deseja remover todos os contatos importados que não tiveram interação com o sistema?")) return;
     
-    setChatToDelete(null);
+    setLoading(true);
+    try {
+      // 1. Buscar contatos na coleção whatsapp_contacts (ou chats) com interacted false
+      const chatsRef = collection(db, 'whatsapp_chats');
+      const q = query(chatsRef, where('ownerId', '==', currentUser.uid), where('interacted', '==', false));
+      const snapshot = await getDocs(q);
+      
+      // 2. Também buscar explicitamente na whatsapp_contacts se existir
+      const contactsRef = collection(db, 'whatsapp_contacts');
+      const q2 = query(contactsRef, where('ownerId', '==', currentUser.uid), where('interacted', '==', false));
+      const snapshot2 = await getDocs(q2);
+
+      const deletePromises = [
+        ...snapshot.docs.map(d => deleteDoc(d.ref)),
+        ...snapshot2.docs.map(d => deleteDoc(d.ref))
+      ];
+
+      await Promise.all(deletePromises);
+
+      // 3. Atualizar localmente
+      setChats(prev => {
+        const next = { ...prev };
+        snapshot.docs.forEach(d => {
+          const jid = d.data().chatJid;
+          if (jid) delete next[jid];
+        });
+        return next;
+      });
+
+      // 4. Trigger global sync
+      const syncRef = doc(db, 'system', `sync_${currentUser.uid}`);
+      await setDoc(syncRef, { 
+        timestamp: Date.now().toString(),
+        ownerId: currentUser.uid,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      alert(`${deletePromises.length} contatos sem interação foram removidos.`);
+    } catch (err) {
+      console.error("Erro na limpeza em massa:", err);
+      alert("Falha ao realizar limpeza. Verifique as permissões.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmDeleteChat = async () => {
+    if (!chatToDelete || !currentUser) return;
+    const id = chatToDelete;
+    
+    // 1. Deletar Lead/Paciente do CRM se vinculado
+    const matchedPt = findPatientForChat(id);
+    if (matchedPt && matchedPt.id) {
+      try {
+        await deleteDoc(doc(db, 'pacientes', matchedPt.id));
+        console.log("[WhatsApp] Lead removido do CRM:", matchedPt.id);
+      } catch (err) {
+        console.error("Erro ao deletar lead no CRM:", err);
+      }
+    }
+
+    try {
+      const cleanedJid = id.replace(/[^a-zA-Z0-9]/g, '_');
+      const deletedDocId = `${currentUser.uid}_${cleanedJid}`;
+      
+      // 2. Deletar do histórico, contatos e mensagens WhatsApp
+      const msgsRef = collection(db, 'whatsapp_messages');
+      const qMsgs = query(msgsRef, where('ownerId', '==', currentUser.uid), where('chatJid', '==', id));
+      const msgDocs = await getDocs(qMsgs);
+      console.log(`[WhatsApp] Deletando ${msgDocs.docs.length} mensagens para o chat:`, id);
+
+      await Promise.all([
+        deleteDoc(doc(db, 'whatsapp_chats', deletedDocId)),
+        deleteDoc(doc(db, 'whatsapp_contacts', deletedDocId)),
+        ...msgDocs.docs.map(d => deleteDoc(d.ref))
+      ]);
+      
+      // 3. Registrar exclusão para outros dispositivos (sync realtime)
+      await setDoc(doc(db, 'deleted_chats', deletedDocId), {
+        ownerId: currentUser.uid,
+        chatJid: id,
+        deletedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // 4. Feedback local imediato
+      setDeletedChatIds(prev => [...new Set([...prev, id])]);
+      
+      // Remover do estado local para garantir que suma da lista imediatamente
+      setChats(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+
+      if (activeChatId === id) setActiveChatId(null);
+      
+      // 5. Sincronização global
+      const syncRef = doc(db, 'system', `sync_${currentUser.uid}`);
+      await setDoc(syncRef, { 
+        timestamp: Date.now().toString(),
+        ownerId: currentUser.uid,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      console.log("[WhatsApp] Chat e contato excluídos com sucesso:", id);
+    } catch (err) {
+      console.error("Erro ao processar exclusão de chat:", err);
+      alert("Falha ao excluir contato. Tente novamente.");
+    } finally {
+      setChatToDelete(null);
+    }
   };
 
   const activeChat = activeChatId ? chats[activeChatId] : null;
@@ -1138,7 +1301,14 @@ export default function WhatsAppSimulator() {
   const filteredChats = Object.entries(chats)
     .filter(([id, chat]) => {
       // 1. Ocultar chats deletados/arquivados sincronizados (Firestore)
-      if (deletedChatIds.includes(id)) return false;
+      // Ajuste: verificar match exato ou match por número (sem @s.whatsapp.net) para garantir que contatos locais sumam
+      const isDeleted = deletedChatIds.some(did => {
+        if (did === id) return true;
+        const didPhone = did.split('@')[0];
+        const idPhone = id.split('@')[0];
+        return didPhone === idPhone && didPhone !== '';
+      });
+      if (isDeleted) return false;
 
       // 2. Ocultar contatos sem nenhuma interação (mensagens)
       // Exceto se for o chat atualmente selecionado (ex: pulo do CRM)
@@ -1303,6 +1473,20 @@ export default function WhatsAppSimulator() {
               className="p-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-xl transition-all"
             >
               <RefreshCw size={14} />
+            </button>
+            <button 
+              onClick={handleBulkCleanupInteracted}
+              title="Limpeza em Massa (Remover contatos sem interação)"
+              className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-xl transition-all border border-amber-100"
+            >
+              <RefreshCw size={14} className="rotate-180" />
+            </button>
+            <button 
+              onClick={handleClearAllChats}
+              title="Limpar todos os contatos importados"
+              className="p-2 bg-neutral-100 hover:bg-red-100 hover:text-red-600 text-neutral-600 rounded-xl transition-all"
+            >
+              <Trash2 size={14} />
             </button>
             <button 
               onClick={handleDisconnect}
@@ -1672,7 +1856,7 @@ export default function WhatsAppSimulator() {
                             return (
                               <div
                                 key={stg.id}
-                                draggable
+                                draggable={!isOverStageBtn}
                                 onDragStart={(e) => {
                                     e.dataTransfer.setData('text/plain', `stage_${colIdx}`);
                                 }}
@@ -1712,6 +1896,8 @@ export default function WhatsAppSimulator() {
                                 `}
                               >
                                 <button
+                                  onMouseEnter={() => setIsOverStageBtn(true)}
+                                  onMouseLeave={() => setIsOverStageBtn(false)}
                                   onClick={() => handleUpdateCRMStage(stg.id)}
                                   className="flex-1 text-left p-1.5 flex items-center justify-between text-neutral-800"
                                 >
@@ -1741,20 +1927,24 @@ export default function WhatsAppSimulator() {
                                     <GripVertical size={12} />
                                   </div>
                                   <button 
+                                    onMouseEnter={() => setIsOverStageBtn(true)}
+                                    onMouseLeave={() => setIsOverStageBtn(false)}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                        setEditingStage(stg);
-                                        setNewStageTitle(stg.title);
-                                        setNewStageColor(stg.color);
-                                        setStageModalMode('edit');
-                                        setIsStageModalOpen(true);
-                                      }}
-                                      className="p-1 hover:bg-neutral-150 text-neutral-400 hover:text-blue-600 rounded"
-                                      title="Editar etapa"
-                                    >
+                                      setEditingStage(stg);
+                                      setNewStageTitle(stg.title);
+                                      setNewStageColor(stg.color);
+                                      setStageModalMode('edit');
+                                      setIsStageModalOpen(true);
+                                    }}
+                                    className="p-1 hover:bg-neutral-150 text-neutral-400 hover:text-blue-600 rounded"
+                                    title="Editar etapa"
+                                  >
                                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3 L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                                     </button>
                                     <button 
+                                      onMouseEnter={() => setIsOverStageBtn(true)}
+                                      onMouseLeave={() => setIsOverStageBtn(false)}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (window.confirm(`Deseja mesmo excluir a etapa "${stg.title}"?`)) {

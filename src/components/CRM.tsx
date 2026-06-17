@@ -43,12 +43,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const [editingStage, setEditingStage] = useState<any | null>(null);
   const [newStageTitle, setNewStageTitle] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isOverHeaderButton, setIsOverHeaderButton] = useState(false);
   
   // Dynamic stages state with localStorage loading
   const [stages, setStages] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('wa_crm_funnel_stages');
-      return saved ? JSON.parse(saved) : columns;
+      if (!saved || saved === 'undefined') return columns;
+      return JSON.parse(saved);
     } catch (e) {
       return columns;
     }
@@ -310,7 +312,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
 
         // Load dynamic stages synced from db
         const funnelStagesQuery = query(collection(db, 'funnel_stages'), where('ownerId', '==', user.uid));
-        unsubFunnelStages = onSnapshot(funnelStagesQuery, (snapshot) => {
+        unsubFunnelStages = onSnapshot(funnelStagesQuery, async (snapshot) => {
           const loadedStages = snapshot.docs.map(d => {
             const data = d.data();
             return {
@@ -325,7 +327,27 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
             loadedStages.sort((a, b) => a.order - b.order);
             updateStages(loadedStages);
           } else {
-            updateStages(columns);
+            // Seed stages if empty and user is logged in
+            try {
+              if ((window as any)._isSeedingStages) return;
+              (window as any)._isSeedingStages = true;
+
+              for (let i = 0; i < columns.length; i++) {
+                const col = columns[i];
+                await setDoc(doc(db, 'funnel_stages', `${user.uid}_${col.id}`), {
+                  title: col.title,
+                  color: col.color,
+                  order: i,
+                  ownerId: user.uid,
+                  createdAt: new Date().toISOString()
+                });
+              }
+              (window as any)._isSeedingStages = false;
+            } catch (err) {
+              console.error("[CRM] Error seeding default stages:", err);
+              (window as any)._isSeedingStages = false;
+              updateStages(columns);
+            }
           }
         });
       } else {
@@ -333,7 +355,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
         setPatients([]);
         try {
           const saved = localStorage.getItem('wa_crm_funnel_stages');
-          if (saved) {
+          if (saved && saved !== 'undefined') {
             updateStages(JSON.parse(saved));
           } else {
             updateStages(columns);
@@ -482,7 +504,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
               className="space-y-4 shrink-0 w-[280px] sm:w-[320px] transition-all duration-300 rounded-2xl p-1"
             >
               <div 
-                draggable
+                draggable={!isOverHeaderButton}
                 onDragStart={(e) => handleDragStageStart(e, colIdx)}
                 className="flex items-center justify-between px-2 py-1.5 hover:bg-neutral-50 rounded-xl cursor-grab active:cursor-grabbing transition-colors border border-transparent hover:border-neutral-200/60"
                 title="Arraste por este cabeçalho para reordenar a etapa"
@@ -493,6 +515,8 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
+                    onMouseEnter={() => setIsOverHeaderButton(true)}
+                    onMouseLeave={() => setIsOverHeaderButton(false)}
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingStage(column);
@@ -504,6 +528,8 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                     <Edit2 size={12} />
                   </button>
                   <button 
+                    onMouseEnter={() => setIsOverHeaderButton(true)}
+                    onMouseLeave={() => setIsOverHeaderButton(false)}
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.preventDefault();
