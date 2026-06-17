@@ -132,6 +132,46 @@
         "createdAt": { "type": "string" }
       },
       "required": ["title", "ownerId"]
+    },
+    "deleted_chats": {
+      "title": "Deleted Chats",
+      "description": "Chats hidden or deleted by the user across devices",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "chatJid": { "type": "string" },
+        "deletedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "chatJid"]
+    },
+    "whatsapp_messages": {
+      "title": "WhatsApp Messages",
+      "description": "Synced messages for whatsapp simulator",
+      "type": "object",
+      "properties": {
+        "chatJid": { "type": "string" },
+        "role": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "serverTimestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatJid", "role", "content", "ownerId"]
+    },
+    "whatsapp_chats": {
+      "title": "WhatsApp Chats",
+      "description": "Synced chat headers for whatsapp simulator",
+      "type": "object",
+      "properties": {
+        "chatJid": { "type": "string" },
+        "name": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatJid", "ownerId"]
     }
   },
   "firestore": {
@@ -142,6 +182,18 @@
     "/funnel_stages/{stageId}": {
       "schema": "funnel_stages",
       "description": "Root dynamic funnel stages"
+    },
+    "/deleted_chats/{chatId}": {
+      "schema": "deleted_chats",
+      "description": "Global list of hidden chats"
+    },
+    "/whatsapp_messages/{msgId}": {
+      "schema": "whatsapp_messages",
+      "description": "Synced whatsapp history"
+    },
+    "/whatsapp_chats/{chatId}": {
+      "schema": "whatsapp_chats",
+      "description": "Synced whatsapp chat headers"
     },
     "/clinics/{clinicId}": {
       "schema": "clinics",

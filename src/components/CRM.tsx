@@ -451,14 +451,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="flex gap-6 pb-6 -mx-4 px-4 sm:mx-0 sm:px-0 flex-wrap select-none min-h-[600px]">
+        <div className="flex gap-4 pb-6 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto select-none min-h-[600px] scrollbar-hide">
           {stages.map((column, colIdx) => (
             <motion.div 
               layout
               key={column.id} 
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
-              className="space-y-4 shrink-0 w-[290px] sm:w-[320px] transition-all duration-300 border border-transparent rounded-2xl p-1"
+              className="space-y-4 shrink-0 w-[280px] sm:w-[300px] transition-all duration-300 border border-transparent rounded-2xl p-1"
             >
               <div 
                 draggable

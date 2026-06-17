@@ -50,6 +50,18 @@ service cloud.firestore {
     match /funnel_stages/{stageId} {
       allow read, write: if isSignedIn();
     }
+
+    match /deleted_chats/{chatId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /whatsapp_messages/{msgId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /whatsapp_chats/{chatId} {
+      allow read, write: if isSignedIn();
+    }
     
     match /system/{docId} {
       allow read: if isSignedIn();

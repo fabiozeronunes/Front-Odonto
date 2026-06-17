@@ -79,6 +79,8 @@ const STAGE_COLOR_PRESETS = [
 ];
 
 export default function WhatsAppSimulator() {
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  
   // Pre-read jump data to avoid race conditions in state initializers
   const initialJumpFromCRM = (() => {
     try {
@@ -88,6 +90,13 @@ export default function WhatsAppSimulator() {
       return null;
     }
   })();
+
+  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
+    if (initialJumpFromCRM?.phone) {
+      return initialJumpFromCRM.phone;
+    }
+    return localStorage.getItem('wa_active_chat_id');
+  });
 
   const [chats, setChats] = useState<Record<string, { name: string; lastMessage: string; timestamp: string; messages: Message[]; source?: string }>>(() => {
     let baseChats: any = {};
@@ -116,6 +125,75 @@ export default function WhatsAppSimulator() {
     return baseChats;
   });
 
+  // Load synced chats from Firestore
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const chatsQuery = query(collection(db, 'whatsapp_chats'), where('ownerId', '==', currentUser.uid));
+    const unsubChats = onSnapshot(chatsQuery, (snapshot) => {
+      const syncedChats: any = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        syncedChats[data.chatJid] = {
+          name: data.name,
+          lastMessage: data.lastMessage,
+          timestamp: data.timestamp,
+          messages: [] // Messages will be loaded per chat
+        };
+      });
+      
+      setChats(prev => {
+        const merged = { ...prev };
+        Object.keys(syncedChats).forEach(id => {
+          if (!merged[id]) {
+            merged[id] = syncedChats[id];
+          } else {
+            merged[id] = { 
+              ...merged[id], 
+              name: syncedChats[id].name,
+              lastMessage: syncedChats[id].lastMessage,
+              timestamp: syncedChats[id].timestamp
+            };
+          }
+        });
+        return merged;
+      });
+    });
+
+    return () => unsubChats();
+  }, [currentUser]);
+
+  // Load messages for the active chat from Firestore
+  useEffect(() => {
+    if (!currentUser || !activeChatId) return;
+
+    const msgsQuery = query(
+      collection(db, 'whatsapp_messages'), 
+      where('ownerId', '==', currentUser.uid),
+      where('chatJid', '==', activeChatId)
+    );
+    
+    const unsubMsgs = onSnapshot(msgsQuery, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as any)).sort((a, b) => new Date(a.serverTimestamp || 0).getTime() - new Date(b.serverTimestamp || 0).getTime());
+
+      setChats(prev => {
+        if (!prev[activeChatId]) return prev;
+        return {
+          ...prev,
+          [activeChatId]: {
+            ...prev[activeChatId],
+            messages: msgs
+          }
+        };
+      });
+    });
+
+    return () => unsubMsgs();
+  }, [currentUser, activeChatId]);
+
   useEffect(() => {
     try {
       if (Object.keys(chats).length > 0) {
@@ -127,13 +205,6 @@ export default function WhatsAppSimulator() {
   }, [chats]);
 
   const [jumpToData, setJumpToData] = useState<{ phone: string; name: string; source?: string } | null>(initialJumpFromCRM);
-
-  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
-    if (initialJumpFromCRM?.phone) {
-      return initialJumpFromCRM.phone;
-    }
-    return localStorage.getItem('wa_active_chat_id');
-  });
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -148,20 +219,18 @@ export default function WhatsAppSimulator() {
   // CRM/Patients Integration State
   const [patients, setPatients] = useState<Patient[]>([]);
   const [clinics, setClinics] = useState<Clinic[]>([]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     if (jumpToData) {
       const { phone, name, source } = jumpToData;
       
       // 1. Unhide the chat if it was previously deleted/hidden
-      setDeletedChatIds(prev => {
-        const filtered = prev.filter(id => id !== phone);
-        if (filtered.length !== prev.length) {
-          localStorage.setItem('wa_deleted_chats', JSON.stringify(filtered));
-        }
-        return filtered;
-      });
+      if (currentUser) {
+        const deletedDocId = `${currentUser.uid}_${phone.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        deleteDoc(doc(db, 'deleted_chats', deletedDocId)).catch(err => {
+          console.error("Erro ao desarquivar chat:", err);
+        });
+      }
 
       // 2. Ensure chat exists in the list
       setChats(prev => {
@@ -216,16 +285,22 @@ export default function WhatsAppSimulator() {
     }
   }, [activeChatId]);
 
-  // Deleted numbers cache to persist hide/delete filter
-  const [deletedChatIds, setDeletedChatIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('wa_deleted_chats');
-      return (saved && saved !== 'undefined' && saved !== 'null') ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error("Erro ao ler wa_deleted_chats:", e);
-      return [];
-    }
-  });
+  // Deleted numbers cache to persist hide/delete filter from Firestore
+  const [deletedChatIds, setDeletedChatIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    // Global sync for deleted/hidden chats
+    const deletedQuery = query(collection(db, 'deleted_chats'), where('ownerId', '==', currentUser.uid));
+    const unsubDeleted = onSnapshot(deletedQuery, (snapshot) => {
+      const ids = snapshot.docs.map(d => d.data().chatJid);
+      setDeletedChatIds(ids);
+      localStorage.setItem('wa_deleted_chats', JSON.stringify(ids));
+    });
+
+    return () => unsubDeleted();
+  }, [currentUser]);
 
   const [chatToDelete, setChatToDelete] = useState<string | null>(null);
 
@@ -403,12 +478,26 @@ export default function WhatsAppSimulator() {
               
               const phone = jid.split('@')[0];
               if (!newChats[jid]) {
-                newChats[jid] = {
+                const chatData = {
                   name: c.name || `+${phone}`,
                   messages: [],
                   lastMessage: c.conversationTimestamp ? '' : '...',
                   timestamp: c.conversationTimestamp ? new Date(c.conversationTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
                 };
+                newChats[jid] = chatData;
+
+                // Sync chat to Firestore
+                if (currentUser) {
+                  const cleanedJid = jid.replace(/[^a-zA-Z0-9]/g, '_');
+                  setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), {
+                    chatJid: jid,
+                    name: chatData.name,
+                    lastMessage: chatData.lastMessage,
+                    timestamp: chatData.timestamp,
+                    ownerId: currentUser.uid,
+                    updatedAt: serverTimestamp()
+                  }, { merge: true });
+                }
               }
             });
 
@@ -418,17 +507,21 @@ export default function WhatsAppSimulator() {
               
               const text = m.message?.conversation || m.message?.extendedTextMessage?.text;
               if (text) {
-                const msgId = m.key.id;
-                if (!newChats[jid].messages.some(msg => msg.id === msgId)) {
-                  newChats[jid].messages.push({
-                    id: msgId,
+                const msgId = m.key.id || `hist_${Date.now()}_${Math.random()}`;
+                
+                // Sync message to Firestore
+                if (currentUser) {
+                  const docId = `${currentUser.uid}_${msgId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                  const ts = m.messageTimestamp ? new Date((m.messageTimestamp as number) * 1000).toISOString() : new Date().toISOString();
+                  setDoc(doc(db, 'whatsapp_messages', docId), {
+                    chatJid: jid,
                     role: m.key.fromMe ? 'assistant' : 'user',
                     content: text,
                     type: 'text',
                     timestamp: new Date((m.messageTimestamp as number) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    remoteJid: jid
-                  });
-                  newChats[jid].lastMessage = text;
+                    ownerId: currentUser.uid,
+                    serverTimestamp: ts
+                  }, { merge: true });
                 }
               }
             });
@@ -448,6 +541,30 @@ export default function WhatsAppSimulator() {
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             remoteJid: remoteJid
           };
+
+          // Sync message to Firestore
+          if (currentUser) {
+            const msgId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            setDoc(doc(db, 'whatsapp_messages', `${currentUser.uid}_${msgId}`), {
+              chatJid: remoteJid,
+              role: data.role,
+              content: data.content,
+              type: 'text',
+              timestamp: newMsg.timestamp,
+              ownerId: currentUser.uid,
+              serverTimestamp: serverTimestamp()
+            });
+
+            // Update Chat header in Firestore
+            const cleanedJid = remoteJid.replace(/[^a-zA-Z0-9]/g, '_');
+            setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), {
+              chatJid: remoteJid,
+              lastMessage: data.content,
+              timestamp: newMsg.timestamp,
+              ownerId: currentUser.uid,
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+          }
 
           setChats(prev => {
             const currentChat = prev[remoteJid] || { 
@@ -943,30 +1060,35 @@ export default function WhatsAppSimulator() {
   };
 
   const confirmDeleteChat = async () => {
-    if (!chatToDelete) return;
+    if (!chatToDelete || !currentUser) return;
     const id = chatToDelete;
     
     // 1. Find corresponding patient by matching phone number
     const matchedPt = findPatientForChat(id);
     if (matchedPt && matchedPt.id) {
-      if (currentUser) {
-        try {
-          await deleteDoc(doc(db, 'pacientes', matchedPt.id));
-        } catch (err) {
-          console.error("Erro ao deletar lead/contato no Firestore:", err);
-        }
-      } else {
-        setPatients(prev => prev.filter(p => p.id !== matchedPt.id));
+      try {
+        await deleteDoc(doc(db, 'pacientes', matchedPt.id));
+      } catch (err) {
+        console.error("Erro ao deletar lead/contato no Firestore:", err);
       }
     }
 
-    // 2. Hide chat from WhatsApp list
-    const updated = [...deletedChatIds, id];
-    setDeletedChatIds(updated);
-    localStorage.setItem('wa_deleted_chats', JSON.stringify(updated));
-    if (activeChatId === id) {
-      setActiveChatId(null);
+    // 2. Hide chat from WhatsApp list globally via Firestore
+    try {
+      const deletedDocId = `${currentUser.uid}_${id.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      await setDoc(doc(db, 'deleted_chats', deletedDocId), {
+        ownerId: currentUser.uid,
+        chatJid: id,
+        deletedAt: new Date().toISOString()
+      });
+      
+      if (activeChatId === id) {
+        setActiveChatId(null);
+      }
+    } catch (err) {
+      console.error("Erro ao sincronizar exclusão de chat:", err);
     }
+    
     setChatToDelete(null);
   };
 
