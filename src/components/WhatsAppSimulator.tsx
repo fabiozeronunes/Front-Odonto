@@ -353,7 +353,10 @@ export default function WhatsAppSimulator() {
     const interval = setInterval(fetchStatus, 20000);
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
+    const wsUrl = `${protocol}//${window.location.host}/api/ws`;
+    console.log("Iniciando conexão WebSocket em:", wsUrl);
+    
+    const socket = new WebSocket(wsUrl);
     socketRef.current = socket;
 
     socket.onmessage = (event) => {
@@ -368,8 +371,12 @@ export default function WhatsAppSimulator() {
         console.log('WS Message:', data);
 
         if (data.type === 'status') {
+          console.log("Status de conexão atualizado:", data.status);
           setConnectionStatus(data.status);
-          if (data.qr) setQrCode(data.qr);
+          if (data.qr) {
+            console.log("QR Code recebido via WS");
+            setQrCode(data.qr);
+          }
           if (data.user) setConnectedUser(data.user);
         } else if (data.type === 'history') {
           setChats(prev => {
@@ -1025,16 +1032,18 @@ export default function WhatsAppSimulator() {
               <ExternalLink size={12} className="stroke-[2.5]" />
               <span>Painel</span>
             </a>
-            {connectionStatus === 'connected' && (
+            
+            {(connectionStatus === 'connected' || connectionStatus === 'qr' || connectionStatus === 'connecting') && (
               <button 
                 onClick={handleDisconnect} 
                 title="Terminar Sessão e Desconectar" 
                 className="flex items-center gap-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-650 text-[10px] font-extrabold uppercase tracking-widest py-1.5 px-2.5 rounded-xl transition-all border border-red-200 shadow-xs cursor-pointer"
                 id="btn-logout"
               >
-                Sair
+                {connectionStatus === 'connected' ? 'Sair' : 'Cancelar'}
               </button>
             )}
+            
             <button className="hover:text-[#128C7E] p-1 rounded-lg hover:bg-white/50">
               <MoreVertical size={16} />
             </button>
@@ -1104,6 +1113,23 @@ export default function WhatsAppSimulator() {
             <div className="absolute left-3.5 top-3 text-neutral-400">
               <QrCode size={14} />
             </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button 
+              onClick={handleReset}
+              title="Resetar Conexão / Novo QR Code"
+              className="p-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-xl transition-all"
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button 
+              onClick={handleDisconnect}
+              title="Encerrar Sessão / Desconectar"
+              className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-1.5 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border border-red-100"
+            >
+              Desconectar WhatsApp
+            </button>
           </div>
 
           {/* Funnel & Channel Filter Row */}

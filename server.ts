@@ -228,10 +228,10 @@ async function connectToWhatsApp() {
 
     sock = makeWASocket({
       version,
-      printQRInTerminal: false, // Avoid overhead in server logs
+      printQRInTerminal: true, // Show QR in terminal too for server-side debug
       auth: state,
-      logger: pino({ level: 'error' }), // Show errors but hide noise
-      browser: ['OdontoAI', 'Chrome', '120.0.0'],
+      logger: pino({ level: 'info' }), // Increased log level for debug
+      browser: Browsers.macOS('Chrome'), // Consistent browser string
       syncFullHistory: false,
       connectTimeoutMs: 60000, // Increase timeout for slower networks
       defaultQueryTimeoutMs: 60000,
@@ -259,7 +259,8 @@ async function connectToWhatsApp() {
       debugLog("connection update: " + JSON.stringify({ ...update, qr: (qr ? 'YES' : 'NO') }));
       
       if (qr) {
-        debugLog("Generating QR Code from update.qr");
+        debugLog("Generating QR Code from update.qr - Length: " + qr.length);
+        console.log("WhatsApp QR Code received - generating base64...");
         try {
           qrCode = await QRCode.toDataURL(qr);
           debugLog("QR Code generated successfully as base64");
@@ -267,6 +268,7 @@ async function connectToWhatsApp() {
           connectionStatus = 'qr';
           isConnecting = false;
           broadcast({ type: 'status', status: 'qr', qr: qrCode });
+          console.log("QR Code broadcasted to clients");
         } catch (e) {
           debugLog("QR Code generation error: " + (e as any).message);
           isConnecting = false;
