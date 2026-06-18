@@ -26,26 +26,39 @@ export default function PatientManager() {
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
-        const q = query(collection(db, 'pacientes'), orderBy('createdAt', 'desc'));
+        // Query only user's patients to avoid permission issues and allow multi-user sync
+        const q = query(collection(db, 'pacientes'), where('ownerId', '==', user.uid));
         const unsubSnapshot = onSnapshot(q, (snapshot) => {
-          setPatients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          // Sort client-side to avoid composite index requirement
+          loaded.sort((a: any, b: any) => {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return dateB - dateA;
+          });
+          setPatients(loaded);
+        }, (err) => {
+          console.error("Erro ao carregar pacientes:", err);
         });
-        return () => unsubSnapshot();
+
+        // Load dentists associated with this owner
+        const dq = query(collection(db, 'dentists'), where('ownerId', '==', user.uid));
+        const unsubDentists = onSnapshot(dq, (snapshot) => {
+          setDentists(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }, (err) => {
+          console.error("Erro ao carregar dentistas:", err);
+        });
+
+        return () => {
+          unsubSnapshot();
+          unsubDentists();
+        };
       } else {
         setPatients([]);
+        setDentists([]);
       }
     });
     return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (auth.currentUser) {
-      const q = query(collection(db, 'dentists'), where('ownerId', '==', auth.currentUser.uid));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        setDentists(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      return () => unsubscribe();
-    }
   }, []);
 
   const filteredPatients = patients.filter(p =>

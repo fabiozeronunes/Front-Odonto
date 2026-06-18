@@ -139,7 +139,7 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
   const getSentReminders = (): Set<string> => {
     try {
       const saved = localStorage.getItem('agenda_sent_reminders');
-      return new Set(saved ? JSON.parse(saved) : []);
+      return new Set(saved && saved !== 'undefined' ? JSON.parse(saved) : []);
     } catch (e) {
       return new Set();
     }
@@ -148,7 +148,7 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
   const markReminderAsSent = (id: string) => {
     try {
       const saved = localStorage.getItem('agenda_sent_reminders');
-      const list = saved ? JSON.parse(saved) : [];
+      const list = saved && saved !== 'undefined' ? JSON.parse(saved) : [];
       if (!list.includes(id)) {
         list.push(id);
         localStorage.setItem('agenda_sent_reminders', JSON.stringify(list));
@@ -633,7 +633,7 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
           setDentists(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Dentist)));
         });
 
-        unsubPatients = onSnapshot(query(collection(db, 'pacientes')), (snapshot) => {
+        unsubPatients = onSnapshot(query(collection(db, 'pacientes'), where('ownerId', '==', user.uid)), (snapshot) => {
           const loadedPatients = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Patient));
           console.log("Loaded patients:", loadedPatients);
           setPatients(loadedPatients);

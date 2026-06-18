@@ -388,10 +388,12 @@ export default function WhatsAppSimulator() {
           setClinics(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Clinic)));
         });
 
-        // Load all patients (linked to owner or public depending on rule)
-        const q = query(collection(db, 'pacientes'));
+        // Load all patients linked to owner
+        const q = query(collection(db, 'pacientes'), where('ownerId', '==', user.uid));
         unsubPatients = onSnapshot(q, (ptSnapshot) => {
           setPatients(ptSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Patient)));
+        }, (err) => {
+          console.error("Erro na lista de pac do WA simulator:", err);
         });
 
         // Load specialties

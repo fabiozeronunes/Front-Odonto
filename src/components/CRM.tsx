@@ -221,28 +221,45 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   };
 
   const deleteStage = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir esta etapa? Pacientes nesta etapa serão movidos para a primeira etapa disponível.")) return;
+    console.log("DeleteStage initialized for ID:", id);
+    if (!auth.currentUser) {
+        console.error("User not authenticated.");
+        return;
+    }
+    
+    if (!window.confirm("Deseja realmente excluir esta etapa? Pacientes nesta etapa serão movidos para a primeira etapa disponível.")) {
+        console.log("User cancelled deletion.");
+        return;
+    }
     
     const targetStage = stages.find(s => s.id === id);
-    if (!targetStage) return;
+    if (!targetStage) {
+        console.error("Target stage not found in local state:", id);
+        return;
+    }
 
+    // Determine the default stage to move patients to
     const filteredStages = stages.filter(s => s.id !== id);
     const defaultStageId = filteredStages[0]?.id || 'lead';
+    console.log("Moving patients to stage ID:", defaultStageId);
 
     // Move patients in this stage to the first available stage
     const pToMove = patients.filter(p => isMatchStage(p.status, id));
+    console.log("Patients to move:", pToMove.length);
     for (const p of pToMove) {
+      console.log("Moving patient:", p.id, " from ", id, " to ", defaultStageId);
       await handleUpdateStatus(p.id, defaultStageId);
     }
 
+    // Update UI immediately
     updateStages(filteredStages);
 
     // Delete in Firestore
-    if (auth.currentUser) {
-      try {
+    try {
+        console.log("Deleting Firestore document: funnel_stages/", id);
         await deleteDoc(doc(db, 'funnel_stages', id));
         
-        // Gatilho de sincronização global
+        // Trigger global sync
         const syncRef = doc(db, 'system', `sync_${auth.currentUser.uid}`);
         await setDoc(syncRef, { 
           timestamp: Date.now().toString(),
@@ -250,10 +267,10 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           updatedAt: serverTimestamp()
         }, { merge: true });
 
-        console.log("[CRM] Etapa excluída e sincronizada:", id);
-      } catch (err) {
+        console.log("[CRM] Etapa excluída e sincronizada com sucesso:", id);
+    } catch (err) {
         console.error("Error deleting stage from Firestore:", err);
-      }
+        alert("Erro ao excluir etapa no banco de dados. Verifique o console.");
     }
   };
 
@@ -494,14 +511,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="flex gap-4 pb-6 overflow-x-auto select-none min-h-[600px] custom-scrollbar scroll-smooth">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-6 select-none min-h-[600px]">
           {stages.map((column, colIdx) => (
             <motion.div 
               key={column.id || colIdx}
               layout
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
-              className="space-y-4 shrink-0 w-[280px] sm:w-[320px] transition-all duration-300 rounded-2xl p-1"
+              className="space-y-4 w-full transition-all duration-300 rounded-2xl p-1"
             >
               <div 
                 draggable={!isOverHeaderButton}
@@ -515,19 +532,24 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
+                    draggable="false"
                     onMouseEnter={() => setIsOverHeaderButton(true)}
                     onMouseLeave={() => setIsOverHeaderButton(false)}
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
+                      e.preventDefault();
                       setEditingStage(column);
                       setNewStageTitle(column.title);
                       setIsStageModalOpen(true);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded"
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded relative z-50 cursor-pointer"
+                    title="Editar Etapa"
                   >
                     <Edit2 size={12} />
                   </button>
                   <button 
+                    draggable="false"
                     onMouseEnter={() => setIsOverHeaderButton(true)}
                     onMouseLeave={() => setIsOverHeaderButton(false)}
                     onMouseDown={(e) => e.stopPropagation()}
@@ -536,7 +558,8 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                       e.stopPropagation();
                       deleteStage(column.id);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-20"
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-50 cursor-pointer"
+                    title="Excluir Etapa"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -563,9 +586,25 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                     className="bg-white p-4 rounded-xl shadow-xs border border-neutral-200 cursor-grab active:cursor-grabbing group hover:border-blue-400 hover:shadow-xs transition-all duration-150"
                   >
                     <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h5 className="font-bold text-neutral-800 text-xs sm:sm">{patient.name}</h5>
+                      <div className="min-w-0 pr-2">
+                        <h5 className="font-bold text-neutral-800 text-xs sm:text-sm truncate">{patient.name}</h5>
                         <p className="text-[10px] text-neutral-400 font-medium">{patient.phone}</p>
+                        
+                        {/* Selector de Etapa amigável para Desktop/Mobile/Tablet */}
+                        <div className="mt-2">
+                          <select
+                            value={stages.find(stg => isMatchStage(patient.status, stg.id))?.id || column.id}
+                            onChange={(e) => handleUpdateStatus(patient.id, e.target.value)}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="w-full text-[10px] font-black uppercase text-neutral-600 bg-neutral-50/80 hover:bg-neutral-100 border border-neutral-200 rounded-lg px-2 py-1 outline-none transition-all cursor-pointer"
+                          >
+                            {stages.map(stg => (
+                              <option key={stg.id} value={stg.id}>
+                                🏷️ {stg.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       <div className="flex gap-1">
                         {stages.filter(c => !isMatchStage(patient.status, c.id)).map(c => (
