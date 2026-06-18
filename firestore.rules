@@ -1,6 +1,13 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /funnel_stages/{stageId} {
+      allow read, write: if request.auth != null;
+    }
+    match /system/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    // Default rule for other collections (as currently permissive)
     match /{document=**} {
       allow read, write: if request.auth != null;
     }

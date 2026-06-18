@@ -40,6 +40,8 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deleteStageId, setDeleteStageId] = useState<string | null>(null);
   const [editingStage, setEditingStage] = useState<any | null>(null);
   const [newStageTitle, setNewStageTitle] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -220,15 +222,10 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
     setNewStageTitle('');
   };
 
-  const deleteStage = async (id: string) => {
-    console.log("DeleteStage initialized for ID:", id);
+  const performDeleteStage = async (id: string) => {
+    console.log("performDeleteStage called for ID:", id);
     if (!auth.currentUser) {
         console.error("User not authenticated.");
-        return;
-    }
-    
-    if (!window.confirm("Deseja realmente excluir esta etapa? Pacientes nesta etapa serão movidos para a primeira etapa disponível.")) {
-        console.log("User cancelled deletion.");
         return;
     }
     
@@ -272,6 +269,11 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
         console.error("Error deleting stage from Firestore:", err);
         alert("Erro ao excluir etapa no banco de dados. Verifique o console.");
     }
+  };
+
+  const deleteStage = (id: string) => {
+      setDeleteStageId(id);
+      setIsDeleteConfirmOpen(true);
   };
 
   // Form State
@@ -554,8 +556,8 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                     onMouseLeave={() => setIsOverHeaderButton(false)}
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
-                      e.preventDefault();
                       e.stopPropagation();
+                      e.preventDefault();
                       deleteStage(column.id);
                     }}
                     className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-50 cursor-pointer"
@@ -835,6 +837,37 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           </div>
         )}
       </AnimatePresence>
+      
+      {isDeleteConfirmOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Confirmar Exclusão</h3>
+            <p className="text-gray-600 mb-6 font-normal">
+              Deseja realmente excluir esta etapa? Pacientes nesta etapa serão movidos para a primeira etapa disponível.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setIsDeleteConfirmOpen(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (deleteStageId) {
+                    performDeleteStage(deleteStageId);
+                  }
+                  setIsDeleteConfirmOpen(false);
+                  setDeleteStageId(null);
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
