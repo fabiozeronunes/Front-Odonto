@@ -242,25 +242,6 @@ export default function WhatsAppSimulator() {
       console.log("Triggering auto-connect on mount...");
       handleConnect();
     }
-    
-    // Fallback: poll status API in case WebSocket fails on load
-    const interval = setInterval(async () => {
-        if (connectionStatus === 'connected') {
-            clearInterval(interval);
-            return;
-        }
-        try {
-            const resp = await fetch('/api/wa-status', { cache: 'no-store' });
-            if (!resp.ok) return;
-            const data = await resp.json();
-            if (data.status) setConnectionStatus(data.status);
-            if (data.qr) setQrCode(data.qr);
-        } catch (e) {
-            console.error("Polling check failed", e);
-        }
-    }, 1000); // Poll every 1s instead of 3s
-    
-    return () => clearInterval(interval);
   }, []); // Run only once
 
   // CRM/Patients Integration State
@@ -506,6 +487,7 @@ export default function WhatsAppSimulator() {
         const data = await res.json();
         console.log("Polling /api/wa-status response:", data);
         if (data.status) {
+          console.log("Polling status received:", data.status, "QR exists:", !!data.qr);
           setConnectionStatus(data.status);
           if (data.qr) {
             console.log("QR Code received in polling. Length:", data.qr.length);
@@ -519,7 +501,7 @@ export default function WhatsAppSimulator() {
     };
 
     fetchStatus();
-    const interval = setInterval(fetchStatus, 20000);
+    const interval = setInterval(fetchStatus, connectionStatus === 'connected' ? 15000 : 2500);
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/ws`;
@@ -705,7 +687,7 @@ export default function WhatsAppSimulator() {
       clearInterval(interval);
       socket.close();
     };
-  }, []);
+  }, [connectionStatus]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -1452,23 +1434,32 @@ export default function WhatsAppSimulator() {
         {/* Real-time Connection Area (Bigger QR Code & Loading) */}
         {connectionStatus !== 'connected' && (
           <div className="p-5 bg-white border-b border-neutral-200 shadow-inner">
-            {connectionStatus === 'qr' && qrCode ? (
-              <div className="flex flex-col items-center gap-4">
-                <div className="text-center space-y-1">
-                  <h3 className="text-xs font-black text-neutral-800 uppercase tracking-widest text-[#128C7E]">Conectar WhatsApp</h3>
-                  <p className="text-[10px] text-neutral-400 max-w-[200px] leading-relaxed mx-auto">Sincronize com seu smartphone abrindo o WhatsApp &gt; Aparelhos Conectados &gt; Escanear QR Code</p>
+            {connectionStatus === 'qr' ? (
+              qrCode ? (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="text-center space-y-1">
+                    <h3 className="text-xs font-black text-neutral-800 uppercase tracking-widest text-[#128C7E]">Conectar WhatsApp</h3>
+                    <p className="text-[10px] text-neutral-400 max-w-[200px] leading-relaxed mx-auto">Sincronize com seu smartphone abrindo o WhatsApp &gt; Aparelhos Conectados &gt; Escanear QR Code</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl shadow-lg border-2 border-emerald-50 flex items-center justify-center transition-all hover:shadow-xl">
+                    <QRCodeSVG value={qrCode} size={256} className="w-56 h-56 sm:w-64 sm:h-64" />
+                  </div>
+                  <button
+                    onClick={handleReset}
+                    className="flex items-center justify-center gap-2 py-2 px-4 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-xl text-[10px] font-black text-neutral-600 transition-all uppercase tracking-widest"
+                  >
+                    <RefreshCw size={12} />
+                    Atualizar Código QR
+                  </button>
                 </div>
-                <div className="bg-white p-4 rounded-2xl shadow-lg border-2 border-emerald-50 flex items-center justify-center transition-all hover:shadow-xl">
-                  <QRCodeSVG value={qrCode} size={256} className="w-56 h-56 sm:w-64 sm:h-64" />
+              ) : (
+                <div className="flex flex-col items-center py-8">
+                  <Loader2 className="w-10 h-10 text-[#128C7E] animate-spin mb-3" />
+                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest animate-pulse">
+                    Gerando QR Code...
+                  </p>
                 </div>
-                <button 
-                  onClick={handleReset}
-                  className="flex items-center justify-center gap-2 py-2 px-4 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-xl text-[10px] font-black text-neutral-600 transition-all uppercase tracking-widest"
-                >
-                  <RefreshCw size={12} />
-                  Atualizar Código QR
-                </button>
-              </div>
+              )
             ) : connectionStatus === 'connecting' ? (
               <div className="flex flex-col items-center py-8">
                 <Loader2 className="w-10 h-10 text-[#128C7E] animate-spin mb-3" />
