@@ -420,9 +420,23 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
   };
 
   const toggleTooth = (toothNumber: number) => {
-    setTreatedTeeth(prev => 
-      prev.includes(toothNumber) ? prev.filter(t => t !== toothNumber) : [...prev, toothNumber]
-    );
+    setTreatedTeeth(prev => {
+      const isIncluded = prev.some(t => Number(t) === toothNumber);
+      return isIncluded 
+        ? prev.filter(t => Number(t) !== toothNumber) 
+        : [...prev, toothNumber];
+    });
+  };
+
+  const allTeethInProcedures = patientProcedures.reduce((acc, proc) => {
+    if (proc.associatedTeeth) {
+      proc.associatedTeeth.forEach((t: any) => acc.add(Number(t)));
+    }
+    return acc;
+  }, new Set<number>());
+
+  const isToothMarked = (tooth: number) => {
+    return treatedTeeth.some(t => Number(t) === tooth) || allTeethInProcedures.has(tooth);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -662,7 +676,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
                           type="button" 
                           key={tooth} 
                           onClick={() => toggleTooth(tooth)} 
-                          className={`w-7 h-8 xs:w-8 xs:h-10 sm:w-10 sm:h-12 rounded-md sm:rounded-lg border flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition-all duration-150 active:scale-90 cursor-pointer ${treatedTeeth.includes(tooth) ? 'bg-blue-600 border-blue-700 text-white shadow-md' : 'bg-neutral-50/80 text-neutral-600 border-neutral-200 hover:border-blue-400 hover:text-blue-600'}`}
+                          className={`w-7 h-8 xs:w-8 xs:h-10 sm:w-10 sm:h-12 rounded-md sm:rounded-lg border flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition-all duration-150 active:scale-90 cursor-pointer ${isToothMarked(tooth) ? 'bg-blue-600 border-blue-700 text-white shadow-md' : 'bg-neutral-50/80 text-neutral-600 border-neutral-200 hover:border-blue-400 hover:text-blue-600'}`}
                         >
                           <span className="text-[7px] sm:text-[8px] opacity-70 font-normal">S</span>
                           <span>{tooth}</span>
@@ -676,7 +690,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
                           type="button" 
                           key={tooth} 
                           onClick={() => toggleTooth(tooth)} 
-                          className={`w-7 h-8 xs:w-8 xs:h-10 sm:w-10 sm:h-12 rounded-md sm:rounded-lg border flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition-all duration-150 active:scale-90 cursor-pointer ${treatedTeeth.includes(tooth) ? 'bg-blue-600 border-blue-700 text-white shadow-md' : 'bg-neutral-50/80 text-neutral-650 border-neutral-200 hover:border-blue-400 hover:text-blue-600'}`}
+                          className={`w-7 h-8 xs:w-8 xs:h-10 sm:w-10 sm:h-12 rounded-md sm:rounded-lg border flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition-all duration-150 active:scale-90 cursor-pointer ${isToothMarked(tooth) ? 'bg-blue-600 border-blue-700 text-white shadow-md' : 'bg-neutral-50/80 text-neutral-600 border-neutral-200 hover:border-blue-400 hover:text-blue-600'}`}
                         >
                           <span className="text-[7px] sm:text-[8px] opacity-70 font-normal">S</span>
                           <span>{tooth}</span>
@@ -701,7 +715,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
                           type="button" 
                           key={tooth} 
                           onClick={() => toggleTooth(tooth)} 
-                          className={`w-7 h-8 xs:w-8 xs:h-10 sm:w-10 sm:h-12 rounded-md sm:rounded-lg border flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition-all duration-150 active:scale-90 cursor-pointer ${treatedTeeth.includes(tooth) ? 'bg-blue-600 border-blue-700 text-white shadow-md' : 'bg-neutral-50/80 text-neutral-600 border-neutral-200 hover:border-blue-400 hover:text-blue-600'}`}
+                          className={`w-7 h-8 xs:w-8 xs:h-10 sm:w-10 sm:h-12 rounded-md sm:rounded-lg border flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition-all duration-150 active:scale-90 cursor-pointer ${isToothMarked(tooth) ? 'bg-blue-600 border-blue-700 text-white shadow-md' : 'bg-neutral-50/80 text-neutral-600 border-neutral-200 hover:border-blue-400 hover:text-blue-600'}`}
                         >
                           <span>{tooth}</span>
                           <span className="text-[7px] sm:text-[8px] opacity-70 font-normal">I</span>
@@ -715,7 +729,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
                           type="button" 
                           key={tooth} 
                           onClick={() => toggleTooth(tooth)} 
-                          className={`w-7 h-8 xs:w-8 xs:h-10 sm:w-10 sm:h-12 rounded-md sm:rounded-lg border flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition-all duration-150 active:scale-90 cursor-pointer ${treatedTeeth.includes(tooth) ? 'bg-blue-600 border-blue-700 text-white shadow-md' : 'bg-neutral-50/80 text-neutral-600 border-neutral-200 hover:border-blue-400 hover:text-blue-600'}`}
+                          className={`w-7 h-8 xs:w-8 xs:h-10 sm:w-10 sm:h-12 rounded-md sm:rounded-lg border flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition-all duration-150 active:scale-90 cursor-pointer ${isToothMarked(tooth) ? 'bg-blue-600 border-blue-700 text-white shadow-md' : 'bg-neutral-50/80 text-neutral-600 border-neutral-200 hover:border-blue-400 hover:text-blue-600'}`}
                         >
                           <span>{tooth}</span>
                           <span className="text-[7px] sm:text-[8px] opacity-70 font-normal">I</span>
