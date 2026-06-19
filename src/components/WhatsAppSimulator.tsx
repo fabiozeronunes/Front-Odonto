@@ -41,7 +41,7 @@ import {
   deleteDoc,
   doc 
 } from 'firebase/firestore';
-import { Patient, Clinic } from '../types';
+import { Patient, Clinic, Appointment } from '../types';
 
 interface Message {
   id: string;
@@ -234,6 +234,7 @@ export default function WhatsAppSimulator() {
 
   // CRM/Patients Integration State
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clinics, setClinics] = useState<Clinic[]>([]);
 
   useEffect(() => {
@@ -247,12 +248,20 @@ export default function WhatsAppSimulator() {
       
       // Sincronizar com localStorage para fallback offline
       localStorage.setItem('wa_simulator_patients', JSON.stringify(docs));
-      console.log("Pacientes sincronizados:", docs.length);
     }, (error) => {
       console.error("Erro na sincronização de pacientes:", error);
     });
 
-    return () => unsubPatients();
+    const appointmentsQuery = query(collection(db, 'agendamentos'), where('ownerId', '==', currentUser.uid));
+    const unsubAppointments = onSnapshot(appointmentsQuery, (snapshot) => {
+        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
+        setAppointments(docs);
+    });
+
+    return () => {
+        unsubPatients();
+        unsubAppointments();
+    };
   }, [currentUser]);
 
   useEffect(() => {
@@ -1056,11 +1065,31 @@ export default function WhatsAppSimulator() {
   const handleQuickResponse = (text: string) => {
     if (!activeChatId || connectionStatus !== 'connected') return;
     
+    // Identificar o paciente pela conversa (telefone)
+    const phone = activeChatId.replace('@c.us', '');
+    const patient = patients.find(p => p.telefone?.includes(phone) || phone.includes(p.telefone || ''));
+    
+    // Identificar o próximo agendamento do paciente
+    const appointment = appointments.find(a => 
+      a.patientId === patient?.id && 
+      new Date(a.startTime) > new Date()
+    );
+
+    // Aplicar substituição de variáveis
+    let finalMessage = text;
+    if (patient) {
+        finalMessage = finalMessage.replace(/{nome_paciente}/g, patient.nome || patient.name || 'Paciente');
+    }
+    if (appointment) {
+        const date = new Date(appointment.startTime).toLocaleString('pt-BR');
+        finalMessage = finalMessage.replace(/{data_consulta}/g, date);
+    }
+    
     if (socketRef.current) {
       socketRef.current.send(JSON.stringify({
         type: 'send_message',
         remoteJid: activeChatId,
-        text: text
+        text: finalMessage
       }));
     }
   };
@@ -1542,7 +1571,7 @@ export default function WhatsAppSimulator() {
                     placeholder="Digite uma resposta manual para assumir o chat..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    onKeyDown={(e) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) && handleSend()}
                   />
                 </div>
                 <button 
