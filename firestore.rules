@@ -63,6 +63,14 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     
+    match /quick_responses/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    match /response_categories/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    
     match /system/{docId} {
       allow read: if isSignedIn();
     }
