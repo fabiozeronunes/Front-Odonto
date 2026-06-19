@@ -215,6 +215,20 @@ export default function WhatsAppSimulator() {
   const [isTyping, setIsTyping] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'qr'>('disconnected');
+  const [isConnectingSlow, setIsConnectingSlow] = useState(false);
+
+  useEffect(() => {
+    if (connectionStatus === 'connecting') {
+      setIsConnectingSlow(false);
+      const timer = setTimeout(() => {
+        if (connectionStatus === 'connecting') setIsConnectingSlow(true);
+      }, 10000);
+      return () => clearTimeout(timer);
+    } else {
+      setIsConnectingSlow(false);
+    }
+  }, [connectionStatus]);
+
   const [connectedUser, setConnectedUser] = useState<{ id: string; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1435,8 +1449,17 @@ export default function WhatsAppSimulator() {
               <div className="flex flex-col items-center py-8">
                 <Loader2 className="w-10 h-10 text-[#128C7E] animate-spin mb-3" />
                 <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest animate-pulse">
-                  Conectando ao Whatsapp...
+                  {isConnectingSlow ? "A conexão está demorando. Tente novamente:" : "Conectando ao Whatsapp..."}
                 </p>
+                {isConnectingSlow && (
+                  <button 
+                    onClick={handleReset}
+                    className="mt-4 flex items-center justify-center gap-2 py-2 px-4 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                  >
+                    <RefreshCw size={12} />
+                    Tentar Novamente
+                  </button>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center py-6 text-center gap-3 bg-neutral-50/50 p-4 rounded-2xl border border-dashed border-neutral-300/65">
