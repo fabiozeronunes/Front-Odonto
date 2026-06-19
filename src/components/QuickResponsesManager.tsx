@@ -55,7 +55,7 @@ export default function QuickResponsesManager() {
         setNewTag(categories[0]);
     } catch (e) {
         console.error("Error adding doc: ", e);
-        alert("Erro ao salvar mensagem.");
+        alert("Erro ao salvar mensagem: " + (e instanceof Error ? e.message : String(e)));
     }
     setIsSaving(false);
   };
