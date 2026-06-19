@@ -187,7 +187,9 @@ export default function App() {
         setIsSidebarOpen(true); // Conectar com menu aberto
         setActiveTab(prev => {
           const params = new URLSearchParams(window.location.search);
-          return params.get('tab') || prev || 'dashboard';
+          const tabParam = params.get('tab');
+          const savedTab = localStorage.getItem('activeTab');
+          return tabParam || savedTab || prev || 'dashboard';
         }); // com tela dashboard em segundo plano ou url parametrizada
         localStorage.setItem('logged_in_view', 'dashboard');
       } else {
@@ -337,7 +339,8 @@ export default function App() {
       
       setIsSidebarOpen(true); // Abre o menu quando conecta
       if (view !== 'dashboard') {
-        setActiveTab('dashboard'); // Define dashboard como tela principal apenas na entrada inicial
+        const savedTab = localStorage.getItem('activeTab');
+        setActiveTab(savedTab || 'dashboard'); // Define dashboard como tela principal apenas se não houver aba salva
       }
       if (targetView && ['login', 'dashboard', 'landing'].includes(targetView)) {
         setView(targetView as any);
@@ -434,7 +437,9 @@ export default function App() {
       setIsSidebarOpen(true);
       setActiveTab(prev => {
         const params = new URLSearchParams(window.location.search);
-        return params.get('tab') || prev || 'dashboard';
+        const tabParam = params.get('tab');
+        const savedTab = localStorage.getItem('activeTab');
+        return tabParam || savedTab || prev || 'dashboard';
       });
       localStorage.setItem('logged_in_view', 'dashboard');
       return;
@@ -445,7 +450,9 @@ export default function App() {
     setIsSidebarOpen(true); // Conecta com menu aberto
     setActiveTab(prev => {
       const params = new URLSearchParams(window.location.search);
-      return params.get('tab') || prev || 'dashboard';
+      const tabParam = params.get('tab');
+      const savedTab = localStorage.getItem('activeTab');
+      return tabParam || savedTab || prev || 'dashboard';
     }); // Dashboard ativo atrás ou url parametrizada
     localStorage.setItem('logged_in_view', 'dashboard');
   };
