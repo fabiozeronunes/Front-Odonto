@@ -215,6 +215,8 @@ export default function WhatsAppSimulator() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrCountdown, setQrCountdown] = useState<number | null>(null);
+  const [isQrActive, setIsQrActive] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'qr'>('disconnected');
   const [isConnectingSlow, setIsConnectingSlow] = useState(false);
 
@@ -476,6 +478,28 @@ export default function WhatsAppSimulator() {
     };
   }, []);
 
+  // Adiciona cronômetro para o QR Code (expira em 10 segundos conforme solicitado)
+  useEffect(() => {
+    let timer: any;
+    if (qrCode && isQrActive) {
+      setQrCountdown(10);
+      timer = setInterval(() => {
+        setQrCountdown(prev => {
+          if (prev !== null && prev <= 1) {
+            setQrCode(null);
+            setIsQrActive(false);
+            clearInterval(timer);
+            return null;
+          }
+          return prev !== null ? prev - 1 : null;
+        });
+      }, 1000);
+    } else {
+      setQrCountdown(null);
+    }
+    return () => clearInterval(timer);
+  }, [qrCode, isQrActive]);
+
   // Poll for connection status (Immediate fetch then smooth 20s interval)
   useEffect(() => {
     const fetchStatus = async () => {
@@ -488,11 +512,19 @@ export default function WhatsAppSimulator() {
         console.log("Polling /api/wa-status response:", data);
         if (data.status) {
           console.log("Polling status received:", data.status, "QR exists:", !!data.qr);
-          setConnectionStatus(data.status);
-          if (data.qr) {
-            console.log("QR Code received in polling. Length:", data.qr.length);
-            setQrCode(data.qr);
+          
+          // Se o status for 'qr' mas não solicitamos (isQrActive = false), 
+          // tratamos como 'disconnected' visualmente para não pular para tela de QR
+          if (data.status === 'qr' && !isQrActive) {
+            setConnectionStatus('disconnected');
+            setQrCode(null);
+          } else {
+            setConnectionStatus(data.status);
+            if (data.qr && isQrActive) {
+              setQrCode(data.qr);
+            }
           }
+          
           if (data.user) setConnectedUser(data.user);
         }
       } catch (e) {
@@ -523,11 +555,17 @@ export default function WhatsAppSimulator() {
 
         if (data.type === 'status') {
           console.log("Status de conexão atualizado:", data.status);
-          setConnectionStatus(data.status);
-          if (data.qr) {
-            console.log("QR Code recebido via WS");
-            setQrCode(data.qr);
+          
+          if (data.status === 'qr' && !isQrActive) {
+            setConnectionStatus('disconnected');
+            setQrCode(null);
+          } else {
+            setConnectionStatus(data.status);
+            if (data.qr && isQrActive) {
+              setQrCode(data.qr);
+            }
           }
+          
           if (data.user) setConnectedUser(data.user);
         } else if (data.type === 'history') {
           setChats(prev => {
@@ -1112,6 +1150,7 @@ export default function WhatsAppSimulator() {
   };
 
   const handleConnect = async () => {
+    setIsQrActive(true);
     setConnectionStatus('connecting');
     setQrCode(null);
     try {
@@ -1432,6 +1471,11 @@ export default function WhatsAppSimulator() {
                   <div className="text-center space-y-1">
                     <h3 className="text-xs font-black text-neutral-800 uppercase tracking-widest text-[#128C7E]">Conectar FRONT ZAP</h3>
                     <p className="text-[10px] text-neutral-400 max-w-[200px] leading-relaxed mx-auto">Sincronize com seu smartphone abrindo o WhatsApp &gt; Aparelhos Conectados &gt; Escanear QR Code</p>
+                    {qrCountdown !== null && (
+                      <p className="text-[11px] font-bold text-red-500 animate-pulse mt-2">
+                        Expira em: {qrCountdown}s
+                      </p>
+                    )}
                   </div>
                   <div className="bg-white p-4 rounded-2xl shadow-lg border-2 border-emerald-50 flex items-center justify-center transition-all hover:shadow-xl">
                     <QRCodeSVG value={qrCode} size={256} className="w-56 h-56 sm:w-64 sm:h-64" />
