@@ -13,13 +13,16 @@ export default function PatientManager() {
   const [dentists, setDentists] = useState<any[]>([]);
 
   useEffect(() => {
-    const patientId = localStorage.getItem('selectedPatient');
-    if (patientId && patients.length > 0) {
-        const patient = patients.find(p => p.id === patientId);
-        if (patient) {
-            openForm(patient);
+    const savedEditingId = localStorage.getItem('editing_patient_id');
+    if (savedEditingId && patients.length > 0) {
+        if (savedEditingId === 'new') {
+            openForm();
+        } else {
+            const patient = patients.find(p => p.id === savedEditingId);
+            if (patient) {
+                openForm(patient);
+            }
         }
-        localStorage.removeItem('selectedPatient');
     }
   }, [patients]);
   
@@ -75,18 +78,29 @@ export default function PatientManager() {
   const openForm = (patient: any = null) => {
     setEditingPatient(patient);
     setShowForm(true);
+    if (patient) {
+      localStorage.setItem('editing_patient_id', patient.id);
+    } else {
+      localStorage.setItem('editing_patient_id', 'new');
+    }
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingPatient(null);
+    localStorage.removeItem('editing_patient_id');
   };
 
   if (showForm) {
     return (
       <div className="space-y-6">
         <button 
-          onClick={() => { setShowForm(false); setEditingPatient(null); }} 
+          onClick={closeForm} 
           className="inline-flex items-center gap-2 text-neutral-600 hover:text-blue-600 font-bold text-sm bg-white px-4 py-2 sm:py-2.5 rounded-xl border border-neutral-200/85 shadow-sm transition-all hover:bg-neutral-50 active:scale-95"
         >
           <span>← Voltar para lista</span>
         </button>
-        <PatientForm onSuccess={() => { setShowForm(false); setEditingPatient(null); }} initialData={editingPatient} />
+        <PatientForm onSuccess={() => { closeForm(); }} initialData={editingPatient} />
       </div>
     );
   }
