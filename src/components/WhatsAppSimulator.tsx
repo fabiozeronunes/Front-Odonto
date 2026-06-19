@@ -241,6 +241,25 @@ export default function WhatsAppSimulator() {
       console.log("Triggering auto-connect on mount...");
       handleConnect();
     }
+    
+    // Fallback: poll status API in case WebSocket fails on load
+    const interval = setInterval(async () => {
+        if (connectionStatus === 'connected') {
+            clearInterval(interval);
+            return;
+        }
+        try {
+            const resp = await fetch('/api/wa-status', { cache: 'no-store' });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (data.status) setConnectionStatus(data.status);
+            if (data.qr) setQrCode(data.qr);
+        } catch (e) {
+            console.error("Polling check failed", e);
+        }
+    }, 1000); // Poll every 1s instead of 3s
+    
+    return () => clearInterval(interval);
   }, []); // Run only once
 
   // CRM/Patients Integration State

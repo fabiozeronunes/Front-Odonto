@@ -637,6 +637,14 @@ wss.on('connection', (ws) => {
 // API Routes
 
 // Health check
+app.get("/api/wa-logs", (req, res) => {
+  try {
+    const logs = fs.existsSync("/tmp/wa-debug.log") ? fs.readFileSync("/tmp/wa-debug.log", "utf-8") : "No logs found";
+    res.send(logs);
+  } catch(e: any) {
+    res.send("Error reading logs: " + e.message);
+  }
+});
 app.get("/api/wa-status", (req, res) => {
   let enrichedHistory = null;
   if (lastHistory) {
