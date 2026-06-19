@@ -277,15 +277,16 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
       return;
     }
 
-    const numericUnitValue = parseFloat(rawVal.replace(',', '.')) || 0;
+    const unitValue = parseFloat(rawVal.replace(',', '.')) || 0;
     const teethCount = treatedTeeth.length > 0 ? treatedTeeth.length : 1;
-    const totalValue = numericUnitValue * teethCount;
+    const totalValue = unitValue * teethCount;
     
     const newPlannedProc = {
       tempId: Date.now().toString() + Math.random().toString(36).substr(2, 5),
       type: name,
       category: category || 'Clínica Geral',
       value: totalValue,
+      unitValue: unitValue,
       status: 'em_curso',
       associatedTeeth: [...treatedTeeth] // Associate current selection
     };
@@ -918,7 +919,16 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
                             {/* Valores do procedimento e abatimento */}
                             <div className="text-left sm:text-right space-y-0.5 min-w-[110px]">
                               <div className="text-xs font-bold text-neutral-400">
-                                Valor: {(parseFloat(proc.value) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                {proc.associatedTeeth && proc.associatedTeeth.length > 1 ? (
+                                  <>
+                                    Valor: {((parseFloat((proc as any).unitValue) || (parseFloat(proc.value) / proc.associatedTeeth.length)) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} cada
+                                    <span className="block text-neutral-800 font-black mt-0.5">
+                                      Total: {(parseFloat(proc.value) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>Valor: {(parseFloat(proc.value) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</>
+                                )}
                               </div>
                               {paidForThisProc > 0 && (
                                 <div className="text-[11px] font-bold text-emerald-600">
@@ -1062,7 +1072,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
                           const balance = Math.max(0, (parseFloat(proc.value) || 0) - paidForThisProc);
                           return (
                             <option key={proc.tempId || idx} value={proc.tempId} disabled={balance <= 0}>
-                              {proc.type} (Restante: {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})
+                              {proc.type} {proc.associatedTeeth && proc.associatedTeeth.length > 0 ? `(Dentes: ${proc.associatedTeeth.sort((a:any,b:any)=>a-b).join(', ')})` : ''} (Restante: {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})
                             </option>
                           );
                         })}
