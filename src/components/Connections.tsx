@@ -22,6 +22,7 @@ import {
   Clock,
   Bell
 } from 'lucide-react';
+import QuickResponsesManager from './QuickResponsesManager';
 
 interface ConnectionsProps {
   setActiveTab: (tab: string) => void;
@@ -50,7 +51,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
   const [syncing, setSyncing] = useState(false);
   const [customLatency, setCustomLatency] = useState<number | null>(null);
 
-  const [subTab, setSubTab] = useState<'integrations' | 'notifications'>('integrations');
+  const [subTab, setSubTab] = useState<'integrations' | 'notifications' | 'quick_responses'>('integrations');
   const [reminderMinutes, setReminderMinutes] = useState<number>(() => {
     const saved = localStorage.getItem('whatsapp_reminder_minutes');
     return saved ? parseInt(saved, 10) : 1440;
@@ -288,6 +289,17 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
           >
             <Settings2 size={16} />
             Configurações de Notificações
+          </button>
+          <button
+            onClick={() => setSubTab('quick_responses')}
+            className={`px-6 py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 ${
+              subTab === 'quick_responses'
+                ? 'border-emerald-500 text-emerald-600 font-extrabold'
+                : 'border-transparent text-neutral-400 hover:text-neutral-500'
+            }`}
+          >
+            <MessageSquare size={16} />
+            Respostas Rápidas
           </button>
         </div>
       )}
@@ -548,6 +560,13 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
             </div>
 
           </div>
+        </motion.div>
+      ) : subTab === 'quick_responses' && type !== 'ads' ? (
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+        >
+            <QuickResponsesManager />
         </motion.div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

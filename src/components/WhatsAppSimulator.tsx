@@ -83,6 +83,7 @@ const STAGE_COLOR_PRESETS = [
 
 export default function WhatsAppSimulator() {
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [filterChatTag, setFilterChatTag] = useState('Todas');
   
   // Pre-read jump data to avoid race conditions in state initializers
   const initialJumpFromCRM = (() => {
@@ -1041,6 +1042,29 @@ export default function WhatsAppSimulator() {
     }
   };
 
+  const [quickResponses, setQuickResponses] = useState<{tag: string, text: string}[]>([]);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const q = query(collection(db, 'quick_responses'), where('ownerId', '==', auth.currentUser.uid));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setQuickResponses(snapshot.docs.map(doc => ({ text: doc.data().text, tag: doc.data().tag })));
+    });
+    return () => unsub();
+  }, [auth.currentUser]);
+
+  const handleQuickResponse = (text: string) => {
+    if (!activeChatId || connectionStatus !== 'connected') return;
+    
+    if (socketRef.current) {
+      socketRef.current.send(JSON.stringify({
+        type: 'send_message',
+        remoteJid: activeChatId,
+        text: text
+      }));
+    }
+  };
+
   const handleSend = () => {
     if (!input.trim() || !activeChatId) return;
     if (connectionStatus !== 'connected') return;
@@ -1268,9 +1292,15 @@ export default function WhatsAppSimulator() {
              ) : connectionStatus === 'connecting' ? (
                 <div className="flex flex-col items-center py-8">
                   <Loader2 className="w-10 h-10 text-[#128C7E] animate-spin mb-3" />
-                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest animate-pulse">
+                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest animate-pulse mb-3">
                     Conectando ao Whatsapp...
                   </p>
+                  <button 
+                    onClick={handleReset}
+                    className="text-[10px] text-neutral-400 hover:text-[#128C7E] underline uppercase tracking-widest"
+                  >
+                    Tentar Novamente
+                  </button>
                 </div>
              ) : (
                 <button 
@@ -1523,6 +1553,39 @@ export default function WhatsAppSimulator() {
                   <Send size={16} />
                 </button>
               </div>
+              
+              {/* Quick Responses */}
+              {quickResponses.length > 0 && (
+                <div className="px-4 py-2 border-t border-neutral-300/20 bg-[#f0f2f5]">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest leading-none">Filtrar:</span>
+                    <select 
+                      className="text-[10px] p-1 rounded-lg border border-neutral-200 bg-white"
+                      value={filterChatTag}
+                      onChange={(e) => setFilterChatTag(e.target.value)}
+                    >
+                      <option value="Todas">Todas</option>
+                      {Array.from(new Set(quickResponses.map(r => r.tag))).map(tag => (
+                        <option key={tag} value={tag}>{tag}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {quickResponses
+                      .filter(res => filterChatTag === 'Todas' || res.tag === filterChatTag)
+                      .map((res, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleQuickResponse(res.text)}
+                          className="bg-white hover:bg-neutral-50 text-neutral-600 text-[10px] sm:text-xs rounded-full px-3 py-1.5 border border-neutral-200 shadow-sm transition-all active:scale-95 flex items-center gap-1"
+                        >
+                          <span className="font-bold text-[8px] uppercase">{res.tag}</span>
+                          {res.text}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* INTEGRATED CRM & STAGES TAGGING SYSTEM PANEL */}
