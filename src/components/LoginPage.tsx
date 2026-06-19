@@ -8,7 +8,7 @@ import {
   sendPasswordResetEmail,
   signInAnonymously
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from '../lib/supabaseAdapter';
 import { auth, db, signInWithGoogle } from '../lib/firebase';
 
 interface Props {

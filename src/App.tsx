@@ -26,11 +26,12 @@ import {
   ClipboardList,
   Award,
   ChevronDown,
-  TrendingUp
+  TrendingUp,
+  Database
 } from 'lucide-react';
 import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db } from './lib/firebase';
 import { User } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, serverTimestamp } from './lib/supabaseAdapter';
 
 // Components (will be extracted)
 import Dashboard from './components/Dashboard';
@@ -49,6 +50,7 @@ import ProcedureManager from './components/ProcedureManager';
 import SpecialtyManager from './components/SpecialtyManager';
 import FinancialReports from './components/FinancialReports';
 import Profile from './components/Profile';
+import SupabaseMigration from './components/SupabaseMigration';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -384,6 +386,7 @@ export default function App() {
     { id: 'ai_ads_connections', label: 'CONEXÕES AI ADS', icon: Sparkles },
     { id: 'ai_connections', label: 'CONEXÃO AI', icon: Brain },
     { id: 'financial_reports', label: 'RELATÓRIOS FINANCEIROS', icon: TrendingUp },
+    { id: 'supabase_migrate', label: 'MIGRAR PARA SUPABASE', icon: Database },
   ];
 
   const getActiveTabLabel = () => {
@@ -665,6 +668,7 @@ export default function App() {
               {activeTab === 'connections' && <Connections type="general" setActiveTab={setActiveTab} accessToken={accessToken} onConnectGoogle={handleLogin} onSyncGoogle={() => setSyncTrigger(prev => prev + 1)} onDisconnectGoogle={() => setAccessToken(null)} />}
               {activeTab === 'ai_ads_connections' && <Connections type="ads" setActiveTab={setActiveTab} accessToken={accessToken} onConnectGoogle={handleLogin} onSyncGoogle={() => setSyncTrigger(prev => prev + 1)} onDisconnectGoogle={() => setAccessToken(null)} />}
               {activeTab === 'ai_connections' && <AIConnections />}
+              {activeTab === 'supabase_migrate' && <SupabaseMigration />}
             </motion.div>
           </AnimatePresence>
         </div>

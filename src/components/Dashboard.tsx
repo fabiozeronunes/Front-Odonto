@@ -29,7 +29,7 @@ import {
   Legend
 } from 'recharts';
 import { db, auth } from '../lib/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from '../lib/supabaseAdapter';
 import { Appointment, Clinic, Dentist, Patient } from '../types';
 import { format, startOfToday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';

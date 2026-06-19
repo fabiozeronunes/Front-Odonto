@@ -40,7 +40,7 @@ import {
   updateDoc, 
   deleteDoc,
   doc 
-} from 'firebase/firestore';
+} from '../lib/supabaseAdapter';
 import { Patient, Clinic, Appointment } from '../types';
 
 interface Message {

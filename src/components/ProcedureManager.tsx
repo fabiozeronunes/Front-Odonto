@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ClipboardList, Plus, Search, Calendar, Edit2, Trash2, Loader2, X, DollarSign, Building2, Stethoscope, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, query, where, deleteDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, deleteDoc, doc, serverTimestamp, updateDoc } from '../lib/supabaseAdapter';
 import { Procedure, Dentist, Clinic } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/FirestoreUtils';
 

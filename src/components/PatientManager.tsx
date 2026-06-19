@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, orderBy, deleteDoc, doc, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, deleteDoc, doc, where } from '../lib/supabaseAdapter';
 import { db, auth } from '../lib/firebase';
 import { Trash2, Edit2, User, Search, MessageCircle, FileText } from 'lucide-react';
 import PatientForm from './PatientForm';

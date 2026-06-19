@@ -3,7 +3,7 @@ import { Calendar as CalendarIcon, Clock, Plus, RefreshCw, AlertCircle, X, Loade
 import { format, addDays, startOfToday, startOfWeek, startOfMonth, endOfMonth, endOfWeek, isSameMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, query, where, serverTimestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, serverTimestamp, deleteDoc, doc, updateDoc } from '../lib/supabaseAdapter';
 import { Appointment, Clinic, Dentist, Patient } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { handleFirestoreError, OperationType } from '../lib/FirestoreUtils';

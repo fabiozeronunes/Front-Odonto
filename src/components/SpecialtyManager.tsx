@@ -26,7 +26,7 @@ import {
   deleteDoc, 
   doc, 
   writeBatch 
-} from 'firebase/firestore';
+} from '../lib/supabaseAdapter';
 import { Dentist, Procedure, Specialty } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 

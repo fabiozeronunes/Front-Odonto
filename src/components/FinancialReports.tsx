@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from '../lib/supabaseAdapter';
 import { Patient } from '../types';
 import { Loader2, DollarSign, TrendingUp, Users } from 'lucide-react';
 import { auth } from '../lib/firebase';

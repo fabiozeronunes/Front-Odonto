@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Save, User, Mail, Phone, Calendar, MapPin, AlertCircle, Trash2, Loader2, FileText, Maximize2, Eye, Plus, DollarSign, CheckCircle2, CheckSquare } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, updateDoc, doc, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, query, where, onSnapshot } from '../lib/supabaseAdapter';
 import { getPatientId, generatePatientDisplayId } from '../lib/patient-utils';
 
 interface FileItem {

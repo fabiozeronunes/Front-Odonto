@@ -23,7 +23,7 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, serverTimestamp, deleteDoc, getDocs, writeBatch, setDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, serverTimestamp, deleteDoc, getDocs, writeBatch, setDoc } from '../lib/supabaseAdapter';
 import { Patient, Clinic } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/FirestoreUtils';
 

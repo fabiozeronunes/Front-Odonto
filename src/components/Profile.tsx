@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { auth, db } from '../lib/firebase';
 import { updateProfile } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from '../lib/supabaseAdapter';
 import { Loader2, Camera, Save } from 'lucide-react';
 
 export default function Profile({ onNavigate }: { onNavigate: (tab: string) => void }) {

@@ -44,6 +44,35 @@ const PORT = 3000;
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/api/ws' });
 
+// Middleware CORS robusto antes de qualquer rota
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'https://front-odonto.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:5173'
+  ];
+
+  if (origin) {
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('run.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+      res.setHeader('Access-Control-Allow-Origin', 'https://front-odonto.vercel.app');
+    }
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Allow-Headers, token, access_token');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 app.use(express.json());
 
 // Health Check
