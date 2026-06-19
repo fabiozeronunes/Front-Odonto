@@ -22,7 +22,11 @@ import {
   ExternalLink,
   ChevronRight,
   Info,
-  GripVertical
+  GripVertical,
+  QrCode,
+  RefreshCw,
+  Power,
+  RefreshCcw
 } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { 
@@ -1235,30 +1239,46 @@ export default function WhatsAppSimulator() {
 
         {/* Real-time Connection Area (Bigger QR Code & Loading) */}
         {connectionStatus !== 'connected' && (
-          <div className="p-5 bg-white border-b border-neutral-200 shadow-inner">
-             {showScanner ? (
-                <div className="relative">
-                  <QrScanner 
-                    onScan={(text) => {
-                      console.log('Scanned:', text);
-                      setShowScanner(false);
-                      // Handle scan logic here (e.g. initiate connection)
-                    }} 
-                    onError={(err) => console.error(err)}
-                  />
-                  <button 
-                    onClick={() => setShowScanner(false)}
-                    className="mt-2 w-full text-center text-xs text-red-500"
-                  >
-                    Cancelar
-                  </button>
+          <div className="p-5 bg-white border-b border-neutral-200 shadow-inner flex flex-col items-center">
+             {connectionStatus === 'qr' && qrCode ? (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="text-center space-y-1">
+                    <h3 className="text-xs font-black text-neutral-800 uppercase tracking-widest text-[#128C7E]">Conectar WhatsApp</h3>
+                  </div>
+                  <div className="bg-white p-2 rounded-2xl shadow-lg border border-neutral-100 flex items-center justify-center">
+                    <img src={qrCode} alt="WhatsApp QR Code" className="w-48 h-48 object-contain" />
+                  </div>
+                  <div className="flex gap-2 w-full">
+                    <button 
+                      onClick={handleReset}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 px-4 bg-neutral-100 hover:bg-neutral-200 rounded-xl text-[10px] font-black text-neutral-600 transition-all uppercase tracking-widest"
+                    >
+                      <RefreshCcw size={11} />
+                      Reconectar
+                    </button>
+                    <button 
+                      onClick={handleDisconnect}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                    >
+                      <Power size={11} />
+                      Desconectar
+                    </button>
+                  </div>
+                </div>
+             ) : connectionStatus === 'connecting' ? (
+                <div className="flex flex-col items-center py-8">
+                  <Loader2 className="w-10 h-10 text-[#128C7E] animate-spin mb-3" />
+                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest animate-pulse">
+                    Conectando ao Whatsapp...
+                  </p>
                 </div>
              ) : (
                 <button 
-                  onClick={() => setShowScanner(true)}
+                  onClick={handleConnect}
                   className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-neutral-300 rounded-2xl text-xs font-black text-neutral-500 uppercase tracking-widest hover:border-[#128C7E] hover:text-[#128C7E] transition-all"
                 >
-                  Escanear QR Code para Conectar
+                  <QrCode size={16} />
+                  Gerar QR Code de Conexão
                 </button>
              )}
           </div>
