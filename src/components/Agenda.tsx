@@ -26,7 +26,14 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
   const [localDeletedGoogleIds, setLocalDeletedGoogleIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('agenda_deleted_google_ids');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const trimmed = saved.trim();
+        if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+      return [];
     } catch {
       return [];
     }
@@ -83,7 +90,14 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
   const [reminderLogs, setReminderLogs] = useState<{ id: string; name: string; dateStr: string; timeStr: string; status: 'success' | 'error'; isSimulated: boolean; message: string }[]>(() => {
     try {
       const logs = localStorage.getItem('agenda_reminder_logs');
-      return logs ? JSON.parse(logs) : [];
+      if (logs) {
+        const trimmed = logs.trim();
+        if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+      return [];
     } catch (e) {
       return [];
     }
@@ -137,7 +151,14 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
   const getSentReminders = (): Set<string> => {
     try {
       const saved = localStorage.getItem('agenda_sent_reminders');
-      return new Set(saved ? JSON.parse(saved) : []);
+      if (saved) {
+        const trimmed = saved.trim();
+        if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return new Set(parsed);
+        }
+      }
+      return new Set();
     } catch (e) {
       return new Set();
     }
@@ -146,7 +167,14 @@ export default function Agenda({ accessToken, onConnectGoogle, onNavigate, onDis
   const markReminderAsSent = (id: string) => {
     try {
       const saved = localStorage.getItem('agenda_sent_reminders');
-      const list = saved ? JSON.parse(saved) : [];
+      let list: any[] = [];
+      if (saved) {
+        const trimmed = saved.trim();
+        if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) list = parsed;
+        }
+      }
       if (!list.includes(id)) {
         list.push(id);
         localStorage.setItem('agenda_sent_reminders', JSON.stringify(list));

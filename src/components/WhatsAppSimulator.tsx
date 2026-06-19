@@ -89,7 +89,13 @@ export default function WhatsAppSimulator() {
   const initialJumpFromCRM = (() => {
     try {
       const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
-      return jumpTo ? JSON.parse(jumpTo) : null;
+      if (jumpTo) {
+        const trimmed = jumpTo.trim();
+        if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+          return JSON.parse(trimmed);
+        }
+      }
+      return null;
     } catch (e) {
       return null;
     }
@@ -107,13 +113,18 @@ export default function WhatsAppSimulator() {
     try {
       const saved = localStorage.getItem('wa_simulator_chats');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        // Só importa chats que tenham mensagens
-        Object.keys(parsed).forEach(id => {
-          if (parsed[id].messages && parsed[id].messages.length > 0) {
-            baseChats[id] = parsed[id];
+        const trimmed = saved.trim();
+        if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+          const parsed = JSON.parse(trimmed);
+          // Só importa chats que tenham mensagens
+          if (parsed && typeof parsed === 'object') {
+            Object.keys(parsed).forEach(id => {
+              if (parsed[id] && parsed[id].messages && parsed[id].messages.length > 0) {
+                baseChats[id] = parsed[id];
+              }
+            });
           }
-        });
+        }
       }
     } catch (e) {
       console.error("Erro ao ler wa_simulator_chats:", e);
@@ -373,7 +384,14 @@ export default function WhatsAppSimulator() {
   const [crmStages, setCrmStages] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('wa_crm_funnel_stages');
-      return saved ? JSON.parse(saved) : CRM_STAGES;
+      if (saved) {
+        const trimmed = saved.trim();
+        if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+      return CRM_STAGES;
     } catch (e) {
       return CRM_STAGES;
     }
@@ -449,7 +467,17 @@ export default function WhatsAppSimulator() {
         setProcedures([]);
         try {
           const saved = localStorage.getItem('wa_crm_funnel_stages');
-          setCrmStages(saved ? JSON.parse(saved) : CRM_STAGES);
+          if (saved) {
+            const trimmed = saved.trim();
+            if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+              const parsed = JSON.parse(trimmed);
+              setCrmStages(Array.isArray(parsed) ? parsed : CRM_STAGES);
+            } else {
+              setCrmStages(CRM_STAGES);
+            }
+          } else {
+            setCrmStages(CRM_STAGES);
+          }
         } catch (e) {
           setCrmStages(CRM_STAGES);
         }

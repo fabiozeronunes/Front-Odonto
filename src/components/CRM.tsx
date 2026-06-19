@@ -48,7 +48,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const [stages, setStages] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('wa_crm_funnel_stages');
-      return saved ? JSON.parse(saved) : columns;
+      if (saved) {
+        const trimmed = saved.trim();
+        if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+      return columns;
     } catch (e) {
       return columns;
     }
@@ -359,7 +366,17 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
         try {
           const saved = localStorage.getItem('wa_crm_funnel_stages');
           if (saved) {
-            updateStages(JSON.parse(saved));
+            const trimmed = saved.trim();
+            if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+              const parsed = JSON.parse(trimmed);
+              if (Array.isArray(parsed)) {
+                updateStages(parsed);
+              } else {
+                updateStages(columns);
+              }
+            } else {
+              updateStages(columns);
+            }
           } else {
             updateStages(columns);
           }
