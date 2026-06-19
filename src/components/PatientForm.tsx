@@ -277,13 +277,15 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
       return;
     }
 
-    const numericValue = parseFloat(rawVal.replace(',', '.')) || 0;
+    const numericUnitValue = parseFloat(rawVal.replace(',', '.')) || 0;
+    const teethCount = treatedTeeth.length > 0 ? treatedTeeth.length : 1;
+    const totalValue = numericUnitValue * teethCount;
     
     const newPlannedProc = {
       tempId: Date.now().toString() + Math.random().toString(36).substr(2, 5),
       type: name,
       category: category || 'Clínica Geral',
-      value: numericValue,
+      value: totalValue,
       status: 'em_curso',
       associatedTeeth: [...treatedTeeth] // Associate current selection
     };
@@ -830,6 +832,11 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
                   value={addProcState.value}
                   onChange={(e) => setAddProcState({ ...addProcState, value: e.target.value })}
                 />
+                {treatedTeeth.length > 0 && (
+                  <p className="text-[10px] font-bold text-blue-600 mt-1 leading-none">
+                    Total: {((parseFloat(addProcState.value.replace(',', '.')) || 0) * treatedTeeth.length).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({treatedTeeth.length} {treatedTeeth.length === 1 ? 'dente' : 'dentes'})
+                  </p>
+                )}
               </div>
 
               {/* Botão Adicionar */}
