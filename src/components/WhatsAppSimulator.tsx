@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { QRCodeSVG } from 'qrcode.react';
 import { 
   Send, 
   Mic, 
@@ -1458,7 +1459,7 @@ export default function WhatsAppSimulator() {
                   <p className="text-[10px] text-neutral-400 max-w-[200px] leading-relaxed mx-auto">Sincronize com seu smartphone abrindo o WhatsApp &gt; Aparelhos Conectados &gt; Escanear QR Code</p>
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-lg border-2 border-emerald-50 flex items-center justify-center transition-all hover:shadow-xl">
-                  <img src={qrCode} alt="WhatsApp QR Code" className="w-56 h-56 sm:w-64 sm:h-64 object-contain" />
+                  <QRCodeSVG value={qrCode} size={256} className="w-56 h-56 sm:w-64 sm:h-64" />
                 </div>
                 <button 
                   onClick={handleReset}

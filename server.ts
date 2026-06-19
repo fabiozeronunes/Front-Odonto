@@ -16,7 +16,7 @@ import makeWASocket, {
   Browsers
 } from "@whiskeysockets/baileys";
 import pino from "pino";
-import QRCode from "qrcode";
+// import QRCode from "qrcode";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 // import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
@@ -262,7 +262,8 @@ async function connectToWhatsApp() {
         debugLog("Generating QR Code from update.qr - Length: " + qr.length);
         console.log("WhatsApp QR Code received - generating base64...");
         try {
-          qrCode = await QRCode.toDataURL(qr);
+          // qrCode = await QRCode.toDataURL(qr);
+          qrCode = qr;
           debugLog("QR Code generated successfully as base64");
           
           connectionStatus = 'qr';
