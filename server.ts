@@ -282,6 +282,18 @@ async function connectToWhatsApp() {
         const error = (lastDisconnect?.error as any);
         const statusCode = error?.output?.statusCode;
         const shouldReconnect = !forceDisconnect && (statusCode !== DisconnectReason.loggedOut);
+        
+        // Tratar erro 408 (QR refs attempts ended) especificamente
+        if (statusCode === 408) {
+          debugLog("QR Timeout (408) detected - forcing session clean and refresh");
+          try {
+            if (fs.existsSync('/tmp/wa_auth')) {
+              fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
+              debugLog("Cleaned /tmp/wa_auth due to 408 error");
+            }
+          } catch(e) {}
+        }
+
         debugLog(`closed: ${error?.message || error}, reconnecting: ${shouldReconnect}, forceDisconnect: ${forceDisconnect}`);
         console.log('WhatsApp connection closed:', error?.message || error, 'reconnecting:', shouldReconnect);
         

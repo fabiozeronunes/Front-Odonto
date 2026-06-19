@@ -223,7 +223,7 @@ export default function WhatsAppSimulator() {
       setIsConnectingSlow(false);
       const timer = setTimeout(() => {
         if (connectionStatus === 'connecting') setIsConnectingSlow(true);
-      }, 10000);
+      }, 45000);
       return () => clearTimeout(timer);
     } else {
       setIsConnectingSlow(false);
