@@ -39,24 +39,42 @@ export default function QuickResponsesManager() {
   }, []);
 
   const handleAdd = async () => {
-    if (!newResponse.trim() || !auth.currentUser) return;
+    if (!newResponse.trim() || !auth.currentUser) {
+        console.error("Missing inputs or user", { text: newResponse, user: auth.currentUser });
+        return;
+    }
     setIsSaving(true);
-    await addDoc(collection(db, 'quick_responses'), { text: newResponse.trim(), tag: newTag, ownerId: auth.currentUser.uid, createdAt: serverTimestamp() });
-    setNewResponse('');
+    try {
+        await addDoc(collection(db, 'quick_responses'), { text: newResponse.trim(), tag: newTag, ownerId: auth.currentUser.uid, createdAt: serverTimestamp() });
+        setNewResponse('');
+    } catch (e) {
+        console.error("Error adding doc: ", e);
+    }
     setIsSaving(false);
   };
 
   const handleAddCategory = async () => {
-    if (!newCategory.trim() || !auth.currentUser) return;
-    await addDoc(collection(db, 'response_categories'), { name: newCategory.trim(), ownerId: auth.currentUser.uid });
-    setNewCategory('');
-    setIsAddingCategory(false);
+    if (!newCategory.trim() || !auth.currentUser) {
+        console.error("Missing inputs or user", { category: newCategory, user: auth.currentUser });
+        return;
+    }
+    try {
+        await addDoc(collection(db, 'response_categories'), { name: newCategory.trim(), ownerId: auth.currentUser.uid });
+        setNewCategory('');
+        setIsAddingCategory(false);
+    } catch (e) {
+        console.error("Error adding category: ", e);
+    }
   };
 
   const handleEdit = async (id: string) => {
     if (!editingText.trim()) return;
-    await updateDoc(doc(db, 'quick_responses', id), { text: editingText.trim(), tag: editingTag });
-    setEditingId(null);
+    try {
+        await updateDoc(doc(db, 'quick_responses', id), { text: editingText.trim(), tag: editingTag });
+        setEditingId(null);
+    } catch (e) {
+        console.error("Error updating doc: ", e);
+    }
   };
 
   const handleDelete = async (id: string, collectionName: string) => {
