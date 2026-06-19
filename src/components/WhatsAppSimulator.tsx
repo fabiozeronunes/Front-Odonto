@@ -246,6 +246,39 @@ export default function WhatsAppSimulator() {
     }
   }, []); // Run only once
 
+  // Sync connection status from Firestore
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const statusRef = doc(db, 'whatsapp_status', currentUser.uid);
+    const unsubStatus = onSnapshot(statusRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.isQrActive !== undefined) setIsQrActive(data.isQrActive);
+        
+        // If isQrActive is true, we accept the status and QR from DB
+        if (data.isQrActive) {
+          if (data.status) setConnectionStatus(data.status);
+          if (data.qrCode) setQrCode(data.qrCode);
+        } else {
+          // If not active, but status is connected, we still show connected
+          if (data.status === 'connected') {
+            setConnectionStatus('connected');
+          } else {
+            // Visual check: if BA is connecting but we didn't request visibility, stay in disconnected
+            if (data.status !== 'connected') {
+              setConnectionStatus('disconnected');
+              setQrCode(null);
+            }
+          }
+        }
+        if (data.user) setConnectedUser(data.user);
+      }
+    });
+
+    return () => unsubStatus();
+  }, [currentUser]);
+
   // CRM/Patients Integration State
   const [patients, setPatients] = useState<Patient[]>([]);
   const [clinics, setClinics] = useState<Clinic[]>([]);
@@ -1150,6 +1183,12 @@ export default function WhatsAppSimulator() {
   };
 
   const handleConnect = async () => {
+    if (currentUser) {
+      setDoc(doc(db, 'whatsapp_status', currentUser.uid), {
+        isQrActive: true,
+        updatedAt: serverTimestamp()
+      }, { merge: true }).catch(err => console.error("Error setting WA intent:", err));
+    }
     setIsQrActive(true);
     setConnectionStatus('connecting');
     setQrCode(null);
@@ -1162,9 +1201,19 @@ export default function WhatsAppSimulator() {
 
   const handleDisconnect = async () => {
     if (window.confirm("Deseja realmente terminar a sessão e desconectar esta conta do FRONT ZAP?")) {
+      if (currentUser) {
+        setDoc(doc(db, 'whatsapp_status', currentUser.uid), {
+          isQrActive: false,
+          status: 'disconnected',
+          qrCode: null,
+          user: null,
+          updatedAt: serverTimestamp()
+        }, { merge: true }).catch(err => console.error("Error clearing WA intent:", err));
+      }
       setConnectionStatus('connecting');
       setQrCode(null);
       setConnectedUser(null);
+      setIsQrActive(false);
       try {
         await fetch('/api/wa-disconnect', { method: 'POST' });
       } catch (e) {

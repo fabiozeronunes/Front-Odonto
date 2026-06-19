@@ -89,6 +89,47 @@ let lastHistory: { chats: any[], messages: any[] } | null = null;
 let contactsCache: Record<string, string> = {};
 let isConnecting = false;
 let forceDisconnect = false;
+let qrActiveIntent = false; // Intent state from DB
+
+// Sync WA Status to Firestore
+async function syncStatusToFirestore(overrides = {}) {
+  try {
+    const ownerInfo = await getGlobalOwnerInfo();
+    if (!ownerInfo) return;
+
+    const statusRef = db.collection('whatsapp_status').doc(ownerInfo.ownerId);
+    await statusRef.set({
+      status: connectionStatus,
+      qrCode: qrCode,
+      user: sock?.user || null,
+      updatedAt: FieldValue.serverTimestamp(),
+      isQrActive: qrActiveIntent,
+      ...overrides
+    }, { merge: true });
+    debugLog(`Status synced to Firestore: ${connectionStatus}`);
+  } catch (err) {
+    console.error("Error syncing WA status to Firestore:", err);
+  }
+}
+
+// Watch for intent changes in DB
+async function watchWAIntent() {
+  const ownerInfo = await getGlobalOwnerInfo();
+  if (!ownerInfo) return;
+
+  db.collection('whatsapp_status').doc(ownerInfo.ownerId).onSnapshot(doc => {
+    if (doc.exists) {
+      const data = doc.data();
+      if (data && data.isQrActive !== undefined) {
+        qrActiveIntent = data.isQrActive;
+        debugLog(`QR Active Intent updated from DB: ${qrActiveIntent}`);
+      }
+    }
+  });
+}
+
+// Call watch on startup
+watchWAIntent();
 
 function isRegisteredContact(jid: string, name?: string): boolean {
   // MUST strictly only be individual physical chats on WhatsApp Web
@@ -187,6 +228,7 @@ async function connectToWhatsApp() {
   debugLog("connectToWhatsApp called");
   connectionStatus = 'connecting';
   broadcast({ type: 'status', status: 'connecting' });
+  syncStatusToFirestore();
 
   // Cleanup old socket if exists
   if (sock) {
@@ -269,6 +311,7 @@ async function connectToWhatsApp() {
           connectionStatus = 'qr';
           isConnecting = false;
           broadcast({ type: 'status', status: 'qr', qr: qrCode });
+          syncStatusToFirestore();
           console.log("QR Code broadcasted to clients");
         } catch (e) {
           debugLog("QR Code generation error: " + (e as any).message);
@@ -304,10 +347,12 @@ async function connectToWhatsApp() {
         if (shouldReconnect) {
           connectionStatus = 'connecting';
           broadcast({ type: 'status', status: 'connecting' });
+          syncStatusToFirestore();
           setTimeout(connectToWhatsApp, 3000);
         } else {
           connectionStatus = 'disconnected';
           broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
+          syncStatusToFirestore({ qrCode: null });
           try {
             if (fs.existsSync('/tmp/wa_auth')) {
               fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
@@ -321,6 +366,7 @@ async function connectToWhatsApp() {
         connectionStatus = 'connected';
         isConnecting = false;
         broadcast({ type: 'status', status: 'connected', user: sock.user });
+        syncStatusToFirestore({ qrCode: null });
       }
     });
 
@@ -695,6 +741,10 @@ app.post("/api/wa-connect", async (req, res) => {
   // Clear any existing connecting locks if manually re-triggered
   isConnecting = false;
   
+  // Update intent
+  qrActiveIntent = true;
+  syncStatusToFirestore({ isQrActive: true });
+
   connectToWhatsApp().then(() => {
     res.json({ success: true });
   }).catch((err) => {
@@ -709,6 +759,8 @@ app.post("/api/wa-disconnect", async (req, res) => {
   qrCode = null;
   connectionStatus = 'disconnected';
   isConnecting = false;
+  qrActiveIntent = false;
+  syncStatusToFirestore({ qrCode: null, isQrActive: false });
 
   const cleanup = () => {
     try {
