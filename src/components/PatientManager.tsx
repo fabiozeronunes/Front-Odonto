@@ -13,55 +13,39 @@ export default function PatientManager() {
   const [dentists, setDentists] = useState<any[]>([]);
 
   useEffect(() => {
-    const savedEditingId = localStorage.getItem('editing_patient_id');
-    if (savedEditingId && patients.length > 0) {
-        if (savedEditingId === 'new') {
-            openForm();
-        } else {
-            const patient = patients.find(p => p.id === savedEditingId);
-            if (patient) {
-                openForm(patient);
-            }
+    const patientId = localStorage.getItem('selectedPatient');
+    if (patientId && patients.length > 0) {
+        const patient = patients.find(p => p.id === patientId);
+        if (patient) {
+            openForm(patient);
         }
+        localStorage.removeItem('selectedPatient');
     }
   }, [patients]);
   
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
-        // Query only user's patients to avoid permission issues and allow multi-user sync
-        const q = query(collection(db, 'pacientes'), where('ownerId', '==', user.uid));
+        const q = query(collection(db, 'pacientes'), orderBy('createdAt', 'desc'));
         const unsubSnapshot = onSnapshot(q, (snapshot) => {
-          const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          // Sort client-side to avoid composite index requirement
-          loaded.sort((a: any, b: any) => {
-            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return dateB - dateA;
-          });
-          setPatients(loaded);
-        }, (err) => {
-          console.error("Erro ao carregar pacientes:", err);
+          setPatients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         });
-
-        // Load dentists associated with this owner
-        const dq = query(collection(db, 'dentists'), where('ownerId', '==', user.uid));
-        const unsubDentists = onSnapshot(dq, (snapshot) => {
-          setDentists(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        }, (err) => {
-          console.error("Erro ao carregar dentistas:", err);
-        });
-
-        return () => {
-          unsubSnapshot();
-          unsubDentists();
-        };
+        return () => unsubSnapshot();
       } else {
         setPatients([]);
-        setDentists([]);
       }
     });
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (auth.currentUser) {
+      const q = query(collection(db, 'dentists'), where('ownerId', '==', auth.currentUser.uid));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        setDentists(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      return () => unsubscribe();
+    }
   }, []);
 
   const filteredPatients = patients.filter(p =>
@@ -78,29 +62,18 @@ export default function PatientManager() {
   const openForm = (patient: any = null) => {
     setEditingPatient(patient);
     setShowForm(true);
-    if (patient) {
-      localStorage.setItem('editing_patient_id', patient.id);
-    } else {
-      localStorage.setItem('editing_patient_id', 'new');
-    }
-  };
-
-  const closeForm = () => {
-    setShowForm(false);
-    setEditingPatient(null);
-    localStorage.removeItem('editing_patient_id');
   };
 
   if (showForm) {
     return (
       <div className="space-y-6">
         <button 
-          onClick={closeForm} 
+          onClick={() => { setShowForm(false); setEditingPatient(null); }} 
           className="inline-flex items-center gap-2 text-neutral-600 hover:text-blue-600 font-bold text-sm bg-white px-4 py-2 sm:py-2.5 rounded-xl border border-neutral-200/85 shadow-sm transition-all hover:bg-neutral-50 active:scale-95"
         >
           <span>← Voltar para lista</span>
         </button>
-        <PatientForm onSuccess={() => { closeForm(); }} initialData={editingPatient} />
+        <PatientForm onSuccess={() => { setShowForm(false); setEditingPatient(null); }} initialData={editingPatient} />
       </div>
     );
   }

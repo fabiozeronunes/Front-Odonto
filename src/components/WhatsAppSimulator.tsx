@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { QRCodeSVG } from 'qrcode.react';
+import QrScanner from './QrScanner';
 import { 
   Send, 
   Mic, 
@@ -12,8 +12,6 @@ import {
   Pause, 
   Loader2, 
   Square, 
-  QrCode, 
-  RefreshCw, 
   ArrowLeft, 
   MessageSquare,
   Trash2,
@@ -31,7 +29,6 @@ import {
   collection, 
   addDoc, 
   setDoc,
-  getDocs,
   serverTimestamp, 
   query, 
   where, 
@@ -82,14 +79,12 @@ const STAGE_COLOR_PRESETS = [
 
 export default function WhatsAppSimulator() {
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
   
   // Pre-read jump data to avoid race conditions in state initializers
   const initialJumpFromCRM = (() => {
     try {
       const jumpTo = localStorage.getItem('wa_whatsapp_jump_to_chat');
-      if (!jumpTo || jumpTo === 'undefined') return null;
-      return JSON.parse(jumpTo);
+      return jumpTo ? JSON.parse(jumpTo) : null;
     } catch (e) {
       return null;
     }
@@ -106,8 +101,14 @@ export default function WhatsAppSimulator() {
     let baseChats: any = {};
     try {
       const saved = localStorage.getItem('wa_simulator_chats');
-      if (saved && saved !== 'undefined') {
-        baseChats = JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Só importa chats que tenham mensagens
+        Object.keys(parsed).forEach(id => {
+          if (parsed[id].messages && parsed[id].messages.length > 0) {
+            baseChats[id] = parsed[id];
+          }
+        });
       }
     } catch (e) {
       console.error("Erro ao ler wa_simulator_chats:", e);
@@ -140,6 +141,9 @@ export default function WhatsAppSimulator() {
       const syncedChats: any = {};
       snapshot.docs.forEach(doc => {
         const data = doc.data();
+        // Ignora chats sem última mensagem ou sem timestamp (provavelmente criados via importação vazia)
+        if (!data.lastMessage || data.lastMessage === '...') return;
+        
         syncedChats[data.chatJid] = {
           name: data.name,
           lastMessage: data.lastMessage,
@@ -215,80 +219,13 @@ export default function WhatsAppSimulator() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
-  const [qrCountdown, setQrCountdown] = useState<number | null>(null);
-  const [isQrActive, setIsQrActive] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'qr'>('disconnected');
-  const [isConnectingSlow, setIsConnectingSlow] = useState(false);
-
-  useEffect(() => {
-    if (connectionStatus === 'connecting') {
-      setIsConnectingSlow(false);
-      const timer = setTimeout(() => {
-        if (connectionStatus === 'connecting') setIsConnectingSlow(true);
-      }, 45000);
-      return () => clearTimeout(timer);
-    } else {
-      setIsConnectingSlow(false);
-    }
-  }, [connectionStatus]);
-
   const [connectedUser, setConnectedUser] = useState<{ id: string; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const [showCRMDetails, setShowCRMDetails] = useState(() => window.innerWidth >= 1280);
-
-  // Auto-connect if disconnected on mount - REMOVIDO por solicitação do usuário
-  // O QR Code deve aparecer apenas quando o botão for clicado e expirar em 10s.
-  useEffect(() => {
-    // handleConnect() não deve ser chamado aqui automaticamente
-  }, []);
-
-  // Sync connection status from Firestore
-  useEffect(() => {
-    if (!currentUser) return;
-
-    // Força desconexão se o componente for montado e estivermos no estado anterior - solicitado pelo usuário
-    const forceReset = async () => {
-      try {
-        await fetch('/api/wa-disconnect', { method: 'POST' });
-        console.log("[FRONT ZAP] Desconexão forçada na montagem.");
-      } catch (e) {}
-    };
-    forceReset();
-
-    const statusRef = doc(db, 'whatsapp_status', currentUser.uid);
-    const unsubStatus = onSnapshot(statusRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data.isQrActive !== undefined) setIsQrActive(data.isQrActive);
-        
-        // Sincroniza countdown baseado na expiração do servidor
-        if (data.qrExpiresAt && data.status === 'qr') {
-          const timeLeft = Math.max(0, Math.ceil((data.qrExpiresAt - Date.now()) / 1000));
-          setQrCountdown(timeLeft);
-        }
-
-        // If isQrActive is true, we accept the status and QR from DB
-        if (data.isQrActive) {
-          if (data.status) setConnectionStatus(data.status);
-          if (data.qrCode) setQrCode(data.qrCode);
-        } else {
-          // If not active, but status is connected, we still show connected
-          if (data.status === 'connected') {
-            setConnectionStatus('connected');
-          } else {
-            // Se o intento não está ativo e não está conectado, garantimos estado desconectado
-            setConnectionStatus('disconnected');
-            setQrCode(null);
-          }
-        }
-        if (data.user) setConnectedUser(data.user);
-      }
-    });
-
-    return () => unsubStatus();
-  }, [currentUser]);
 
   // CRM/Patients Integration State
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -422,7 +359,7 @@ export default function WhatsAppSimulator() {
   const [crmStages, setCrmStages] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('wa_crm_funnel_stages');
-      return (saved && saved !== 'undefined') ? JSON.parse(saved) : CRM_STAGES;
+      return saved ? JSON.parse(saved) : CRM_STAGES;
     } catch (e) {
       return CRM_STAGES;
     }
@@ -432,7 +369,6 @@ export default function WhatsAppSimulator() {
   const [editingStage, setEditingStage] = useState<any | null>(null);
   const [newStageTitle, setNewStageTitle] = useState('');
   const [newStageColor, setNewStageColor] = useState('bg-blue-500 text-blue-600 ring-blue-100');
-  const [isOverStageBtn, setIsOverStageBtn] = useState(false);
 
   // Sync auth and Firestore patients/clinics in real-time
   useEffect(() => {
@@ -457,12 +393,10 @@ export default function WhatsAppSimulator() {
           setClinics(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Clinic)));
         });
 
-        // Load all patients linked to owner
-        const q = query(collection(db, 'pacientes'), where('ownerId', '==', user.uid));
+        // Load all patients (linked to owner or public depending on rule)
+        const q = query(collection(db, 'pacientes'));
         unsubPatients = onSnapshot(q, (ptSnapshot) => {
           setPatients(ptSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Patient)));
-        }, (err) => {
-          console.error("Erro na lista de pac do WA simulator:", err);
         });
 
         // Load specialties
@@ -501,11 +435,7 @@ export default function WhatsAppSimulator() {
         setProcedures([]);
         try {
           const saved = localStorage.getItem('wa_crm_funnel_stages');
-          if (saved && saved !== 'undefined') {
-            setCrmStages(JSON.parse(saved));
-          } else {
-            setCrmStages(CRM_STAGES);
-          }
+          setCrmStages(saved ? JSON.parse(saved) : CRM_STAGES);
         } catch (e) {
           setCrmStages(CRM_STAGES);
         }
@@ -522,28 +452,6 @@ export default function WhatsAppSimulator() {
     };
   }, []);
 
-  // Adiciona cronômetro para o QR Code (expira em 10 segundos conforme solicitado)
-  // Agora sincronizado com o servidor via Firestore
-  useEffect(() => {
-    let timer: any;
-    if (qrCode && isQrActive) {
-      timer = setInterval(() => {
-        setQrCountdown(prev => {
-          if (prev !== null && prev <= 1) {
-            setQrCode(null);
-            setIsQrActive(false);
-            clearInterval(timer);
-            return null;
-          }
-          return prev !== null ? prev - 1 : null;
-        });
-      }, 1000);
-    } else {
-      setQrCountdown(null);
-    }
-    return () => clearInterval(timer);
-  }, [qrCode, isQrActive]);
-
   // Poll for connection status (Immediate fetch then smooth 20s interval)
   useEffect(() => {
     const fetchStatus = async () => {
@@ -553,22 +461,9 @@ export default function WhatsAppSimulator() {
         });
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const data = await res.json();
-        console.log("Polling /api/wa-status response:", data);
         if (data.status) {
-          console.log("Polling status received:", data.status, "QR exists:", !!data.qr);
-          
-          // Se o status for 'qr' mas não solicitamos (isQrActive = false), 
-          // tratamos como 'disconnected' visualmente para não pular para tela de QR
-          if (data.status === 'qr' && !isQrActive) {
-            setConnectionStatus('disconnected');
-            setQrCode(null);
-          } else {
-            setConnectionStatus(data.status);
-            if (data.qr && isQrActive) {
-              setQrCode(data.qr);
-            }
-          }
-          
+          setConnectionStatus(data.status);
+          if (data.qr) setQrCode(data.qr);
           if (data.user) setConnectedUser(data.user);
         }
       } catch (e) {
@@ -577,7 +472,7 @@ export default function WhatsAppSimulator() {
     };
 
     fetchStatus();
-    const interval = setInterval(fetchStatus, connectionStatus === 'connected' ? 15000 : 2500);
+    const interval = setInterval(fetchStatus, 20000);
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/ws`;
@@ -599,17 +494,11 @@ export default function WhatsAppSimulator() {
 
         if (data.type === 'status') {
           console.log("Status de conexão atualizado:", data.status);
-          
-          if (data.status === 'qr' && !isQrActive) {
-            setConnectionStatus('disconnected');
-            setQrCode(null);
-          } else {
-            setConnectionStatus(data.status);
-            if (data.qr && isQrActive) {
-              setQrCode(data.qr);
-            }
+          setConnectionStatus(data.status);
+          if (data.qr) {
+            console.log("QR Code recebido via WS");
+            setQrCode(data.qr);
           }
-          
           if (data.user) setConnectedUser(data.user);
         } else if (data.type === 'history') {
           setChats(prev => {
@@ -629,36 +518,14 @@ export default function WhatsAppSimulator() {
                 };
                 newChats[jid] = chatData;
 
-                // Sync chat to Firestore - Only if not fromMe if it's a new contact?
-                // Actually Baileys sends history. We should check if it has interactions.
+                // Sync chat to Firestore
                 if (currentUser) {
                   const cleanedJid = jid.replace(/[^a-zA-Z0-9]/g, '_');
-                  // Valor default para interacted. Se conversationTimestamp existe, provavelmente houve troca.
-                  const interacted = c.conversationTimestamp ? true : false;
-                  
-                  // O usuário solicitou que apenas contatos INICIADOS pelo cliente sejam salvos no Firestore
-                  // Se interacted for false (contato importado sem mensagens prévias trocadas), evitamos o salvamento inicial
-                  if (!interacted) {
-                    console.log("[WhatsApp Sync] Ignorando contato sem interação prévia:", jid);
-                    return;
-                  }
-
                   setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), {
                     chatJid: jid,
                     name: chatData.name,
                     lastMessage: chatData.lastMessage,
                     timestamp: chatData.timestamp,
-                    interacted: interacted,
-                    ownerId: currentUser.uid,
-                    updatedAt: serverTimestamp()
-                  }, { merge: true });
-
-                  // Também salvar em whatsapp_contacts como solicitado pela estrutura
-                  setDoc(doc(db, 'whatsapp_contacts', `${currentUser.uid}_${cleanedJid}`), {
-                    chatJid: jid,
-                    name: chatData.name,
-                    phone: phone,
-                    interacted: interacted,
                     ownerId: currentUser.uid,
                     updatedAt: serverTimestamp()
                   }, { merge: true });
@@ -722,21 +589,13 @@ export default function WhatsAppSimulator() {
 
             // Update Chat header in Firestore
             const cleanedJid = remoteJid.replace(/[^a-zA-Z0-9]/g, '_');
-            const chatUpdate: any = {
+            setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), {
               chatJid: remoteJid,
               lastMessage: data.content,
               timestamp: newMsg.timestamp,
               ownerId: currentUser.uid,
               updatedAt: serverTimestamp()
-            };
-            
-            // Se mensagem veio do usuário (cliente), marcar como interagido
-            if (data.role === 'user') {
-              chatUpdate.interacted = true;
-            }
-
-            setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), chatUpdate, { merge: true });
-            setDoc(doc(db, 'whatsapp_contacts', `${currentUser.uid}_${cleanedJid}`), chatUpdate, { merge: true });
+            }, { merge: true });
           }
 
           setChats(prev => {
@@ -769,7 +628,7 @@ export default function WhatsAppSimulator() {
       clearInterval(interval);
       socket.close();
     };
-  }, [connectionStatus]);
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -1194,42 +1053,20 @@ export default function WhatsAppSimulator() {
   };
 
   const handleConnect = async () => {
-    console.log("[FRONT ZAP] Iniciando conexão manual...");
-    setIsQrActive(true);
     setConnectionStatus('connecting');
     setQrCode(null);
-    
-    if (currentUser) {
-      setDoc(doc(db, 'whatsapp_status', currentUser.uid), {
-        isQrActive: true,
-        status: 'connecting',
-        updatedAt: serverTimestamp()
-      }, { merge: true }).catch(err => console.error("Error setting WA intent:", err));
-    }
-    
     try {
       await fetch('/api/wa-connect', { method: 'POST' });
     } catch (e) {
       console.error('Failed to initiate connection:', e);
-      setConnectionStatus('disconnected');
     }
   };
 
   const handleDisconnect = async () => {
-    if (window.confirm("Deseja realmente terminar a sessão e desconectar esta conta do FRONT ZAP?")) {
-      if (currentUser) {
-        setDoc(doc(db, 'whatsapp_status', currentUser.uid), {
-          isQrActive: false,
-          status: 'disconnected',
-          qrCode: null,
-          user: null,
-          updatedAt: serverTimestamp()
-        }, { merge: true }).catch(err => console.error("Error clearing WA intent:", err));
-      }
+    if (window.confirm("Deseja realmente terminar a sessão e desconectar esta conta do WhatsApp?")) {
       setConnectionStatus('connecting');
       setQrCode(null);
       setConnectedUser(null);
-      setIsQrActive(false);
       try {
         await fetch('/api/wa-disconnect', { method: 'POST' });
       } catch (e) {
@@ -1251,6 +1088,7 @@ export default function WhatsAppSimulator() {
   // Permanently delete/hide whatsapp chat session from sidebar
   const handleDeleteChat = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    e.preventDefault();
     setChatToDelete(id);
   };
 
@@ -1258,53 +1096,33 @@ export default function WhatsAppSimulator() {
     if (!chatToDelete || !currentUser) return;
     const id = chatToDelete;
     
-    // 1. Deletar Lead/Paciente do CRM se vinculado
+    // 1. Find corresponding patient by matching phone number
     const matchedPt = findPatientForChat(id);
     if (matchedPt && matchedPt.id) {
       try {
         await deleteDoc(doc(db, 'pacientes', matchedPt.id));
-        console.log("[WhatsApp] Lead removido do CRM:", matchedPt.id);
       } catch (err) {
-        console.error("Erro ao deletar lead no CRM:", err);
+        console.error("Erro ao deletar lead/contato no Firestore:", err);
       }
     }
 
+    // 2. Hide chat from WhatsApp list globally via Firestore
     try {
-      const cleanedJid = id.replace(/[^a-zA-Z0-9]/g, '_');
-      const deletedDocId = `${currentUser.uid}_${cleanedJid}`;
-      
-      // 2. Deletar do histórico, contatos e mensagens WhatsApp
-      const msgsRef = collection(db, 'whatsapp_messages');
-      const qMsgs = query(msgsRef, where('ownerId', '==', currentUser.uid), where('chatJid', '==', id));
-      const msgDocs = await getDocs(qMsgs);
-      console.log(`[WhatsApp] Deletando ${msgDocs.docs.length} mensagens para o chat:`, id);
-
-      await Promise.all([
-        deleteDoc(doc(db, 'whatsapp_chats', deletedDocId)),
-        deleteDoc(doc(db, 'whatsapp_contacts', deletedDocId)),
-        ...msgDocs.docs.map(d => deleteDoc(d.ref))
-      ]);
-      
-      // 3. Registrar exclusão para outros dispositivos (sync realtime)
+      const deletedDocId = `${currentUser.uid}_${id.replace(/[^a-zA-Z0-9]/g, '_')}`;
       await setDoc(doc(db, 'deleted_chats', deletedDocId), {
         ownerId: currentUser.uid,
         chatJid: id,
         deletedAt: new Date().toISOString()
       }, { merge: true });
-
-      // 4. Feedback local imediato
+      
+      // Forçar atualização local imediata para feedback instantâneo
       setDeletedChatIds(prev => [...new Set([...prev, id])]);
       
-      // Remover do estado local para garantir que suma da lista imediatamente
-      setChats(prev => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-
-      if (activeChatId === id) setActiveChatId(null);
+      if (activeChatId === id) {
+        setActiveChatId(null);
+      }
       
-      // 5. Sincronização global
+      // Gatilho de sincronização global (App.tsx versioning)
       const syncRef = doc(db, 'system', `sync_${currentUser.uid}`);
       await setDoc(syncRef, { 
         timestamp: Date.now().toString(),
@@ -1312,13 +1130,12 @@ export default function WhatsAppSimulator() {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      console.log("[WhatsApp] Chat e contato excluídos com sucesso:", id);
+      console.log("[WhatsApp] Chat excluído e sincronizado:", id);
     } catch (err) {
-      console.error("Erro ao processar exclusão de chat:", err);
-      alert("Falha ao excluir contato. Tente novamente.");
-    } finally {
-      setChatToDelete(null);
+      console.error("Erro ao sincronizar exclusão de chat:", err);
     }
+    
+    setChatToDelete(null);
   };
 
   const activeChat = activeChatId ? chats[activeChatId] : null;
@@ -1333,14 +1150,7 @@ export default function WhatsAppSimulator() {
   const filteredChats = Object.entries(chats)
     .filter(([id, chat]) => {
       // 1. Ocultar chats deletados/arquivados sincronizados (Firestore)
-      // Ajuste: verificar match exato ou match por número (sem @s.whatsapp.net) para garantir que contatos locais sumam
-      const isDeleted = deletedChatIds.some(did => {
-        if (did === id) return true;
-        const didPhone = did.split('@')[0];
-        const idPhone = id.split('@')[0];
-        return didPhone === idPhone && didPhone !== '';
-      });
-      if (isDeleted) return false;
+      if (deletedChatIds.includes(id)) return false;
 
       // 2. Ocultar contatos sem nenhuma interação (mensagens)
       // Exceto se for o chat atualmente selecionado (ex: pulo do CRM)
@@ -1384,161 +1194,88 @@ export default function WhatsAppSimulator() {
       <div className={`${activeChatId ? 'hidden md:flex' : 'flex w-full md:flex'} border-r border-neutral-200 flex-col bg-[#f0f2f5] md:w-[320px] md:min-w-[320px] md:max-w-[320px] shrink-0`}>
         
         {/* Sidebar Header */}
-        <div className="h-20 px-4 flex flex-col justify-center bg-[#f0f2f5] shrink-0 border-b border-neutral-300/40">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#128C7E] overflow-hidden flex items-center justify-center border border-white shadow-sm shrink-0">
-                <span className="text-white font-bold text-sm">
-                  {connectedUser ? (connectedUser.name?.[0]?.toUpperCase() || 'O') : 'A'}
+        <div className="h-16 px-4 flex items-center justify-between bg-[#f0f2f5] shrink-0 border-b border-neutral-300/40">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#128C7E] overflow-hidden flex items-center justify-center border border-white shadow-sm shrink-0">
+              <span className="text-white font-bold text-sm">
+                {connectedUser ? (connectedUser.name?.[0]?.toUpperCase() || 'O') : 'A'}
+              </span>
+            </div>
+            {connectedUser && (
+              <div className="min-w-0">
+                <span className="text-xs font-black text-neutral-800 uppercase tracking-tighter truncate block">
+                  {connectedUser.name || 'Conectado'}
+                </span>
+                <span className="text-[8px] font-bold text-green-600 uppercase tracking-widest block flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping" />
+                  Ativo no Watts
                 </span>
               </div>
-              <div className="min-w-0">
-                {connectionStatus === 'connected' ? (
-                  <>
-                    <span className="text-xs font-black text-neutral-800 uppercase tracking-tighter truncate block">
-                      {connectedUser?.name || 'Agente Ativo'}
-                    </span>
-                    <span className="text-[8px] font-bold text-green-600 uppercase tracking-widest block flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping" />
-                      Sincronizado
-                    </span>
-                  </>
-                ) : connectionStatus === 'qr' ? (
-                  <>
-                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-tighter block">
-                      Aguardando QR Code
-                    </span>
-                    <span className="text-[8px] font-bold text-amber-500 uppercase tracking-widest block">
-                      {qrCountdown !== null ? `Expira em ${qrCountdown}s` : 'Gerando...'}
-                    </span>
-                  </>
-                ) : connectionStatus === 'connecting' ? (
-                  <span className="text-[9px] font-black text-blue-600 uppercase tracking-tighter animate-pulse block">
-                    Conectando...
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-[9px] font-black text-neutral-500 uppercase tracking-tighter block">
-                      FRONT ZAP
-                    </span>
-                    <span className="text-[8px] font-bold text-red-500 uppercase tracking-widest block">
-                      Desconectado
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-2 text-neutral-600 items-center">
-              <a 
-                href={`${window.location.origin}?tab=whatsapp`} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                title="Abrir Painel de Atendimento em Nova Aba (Desktop)" 
-                className="flex items-center justify-center w-8 h-8 bg-white/80 hover:bg-[#128C7E] hover:text-white text-neutral-700 rounded-full transition-all border border-neutral-300/40 shadow-xs"
-                id="btn-desktop-panel"
-              >
-                <ExternalLink size={14} className="stroke-[2.5]" />
-              </a>
-              <button className="hover:text-[#128C7E] p-1 rounded-lg hover:bg-white/50">
-                <MoreVertical size={16} />
-              </button>
-            </div>
+            )}
+          </div>
+          <div className="flex gap-2 text-neutral-600 items-center">
+            <a 
+              href={`${window.location.origin}?tab=whatsapp`} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              title="Abrir Painel de Atendimento em Nova Aba (Desktop)" 
+              className="flex items-center gap-1.5 bg-[#128C7E]/10 hover:bg-[#128C7E] hover:text-white text-neutral-700 text-[10px] font-extrabold uppercase tracking-widest py-1.5 px-3 rounded-xl transition-all border border-neutral-300/40 shadow-xs"
+              id="btn-desktop-panel"
+            >
+              <ExternalLink size={12} className="stroke-[2.5]" />
+              <span>Painel</span>
+            </a>
+            
+            
+            <button className="hover:text-[#128C7E] p-1 rounded-lg hover:bg-white/50">
+              <MoreVertical size={16} />
+            </button>
           </div>
         </div>
 
         {/* Real-time Connection Area (Bigger QR Code & Loading) */}
         {connectionStatus !== 'connected' && (
           <div className="p-5 bg-white border-b border-neutral-200 shadow-inner">
-            {connectionStatus === 'qr' ? (
-              qrCode ? (
-                <div className="flex flex-col items-center gap-4">
-                  <div className="text-center space-y-1">
-                    <h3 className="text-xs font-black text-neutral-800 uppercase tracking-widest text-[#128C7E]">Conectar FRONT ZAP</h3>
-                    <p className="text-[10px] text-neutral-400 max-w-[200px] leading-relaxed mx-auto">Sincronize com seu smartphone abrindo o WhatsApp &gt; Aparelhos Conectados &gt; Escanear QR Code</p>
-                    {qrCountdown !== null && (
-                      <p className="text-[11px] font-bold text-red-500 animate-pulse mt-2">
-                        Expira em: {qrCountdown}s
-                      </p>
-                    )}
-                  </div>
-                  <div className="bg-white p-4 rounded-2xl shadow-lg border-2 border-emerald-50 flex items-center justify-center transition-all hover:shadow-xl">
-                    <QRCodeSVG value={qrCode} size={256} className="w-56 h-56 sm:w-64 sm:h-64" />
-                  </div>
-                  <button
-                    onClick={handleReset}
-                    className="flex items-center justify-center gap-2 py-2 px-4 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-xl text-[10px] font-black text-neutral-600 transition-all uppercase tracking-widest"
-                  >
-                    <RefreshCw size={12} />
-                    Atualizar Código QR
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center py-8">
-                  <Loader2 className="w-10 h-10 text-[#128C7E] animate-spin mb-3" />
-                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest animate-pulse">
-                    Gerando QR Code...
-                  </p>
-                </div>
-              )
-            ) : connectionStatus === 'connecting' ? (
-              <div className="flex flex-col items-center py-8">
-                <Loader2 className="w-10 h-10 text-[#128C7E] animate-spin mb-3" />
-                <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest animate-pulse">
-                  {isConnectingSlow ? "A conexão está demorando. Tente novamente:" : "Conectando ao Whatsapp..."}
-                </p>
-                {isConnectingSlow && (
+             {showScanner ? (
+                <div className="relative">
+                  <QrScanner 
+                    onScan={(text) => {
+                      console.log('Scanned:', text);
+                      setShowScanner(false);
+                      // Handle scan logic here (e.g. initiate connection)
+                    }} 
+                    onError={(err) => console.error(err)}
+                  />
                   <button 
-                    onClick={handleReset}
-                    className="mt-4 flex items-center justify-center gap-2 py-2 px-4 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                    onClick={() => setShowScanner(false)}
+                    className="mt-2 w-full text-center text-xs text-red-500"
                   >
-                    <RefreshCw size={12} />
-                    Tentar Novamente
+                    Cancelar
                   </button>
-                )}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center py-6 text-center gap-3 bg-neutral-50/50 p-4 rounded-2xl border border-dashed border-neutral-300/65">
-                <div className="text-neutral-400 p-2.5 bg-neutral-100 rounded-full">
-                  <QrCode size={30} className="stroke-[1.5]" />
                 </div>
-                <div className="space-y-1">
-                  <h3 className="text-[11px] font-black text-neutral-700 uppercase tracking-widest">FRONT ZAP Desconectado</h3>
-                  <p className="text-[10px] text-neutral-400 max-w-[230px] leading-relaxed mx-auto">
-                    Inicie a sincronização de leitura para ativar os atendimentos do agente e capturar leads automaticamente.
-                  </p>
-                </div>
+             ) : (
                 <button 
-                  onClick={handleConnect}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-[#128C7E] hover:bg-[#075e54] text-white rounded-xl text-[10px] font-black tracking-widest uppercase transition-all shadow-xs active:scale-95 cursor-pointer"
+                  onClick={() => setShowScanner(true)}
+                  className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-neutral-300 rounded-2xl text-xs font-black text-neutral-500 uppercase tracking-widest hover:border-[#128C7E] hover:text-[#128C7E] transition-all"
                 >
-                  <RefreshCw size={11} className="stroke-[2.5]" />
-                  Iniciar Atendimento FRONT ZAP
+                  Escanear QR Code para Conectar
                 </button>
-              </div>
-            )}
+             )}
           </div>
         )}
-
         {/* Search contacts bar */}
         <div className="p-3 bg-white border-b border-neutral-200/50 space-y-2">
           <div className="relative">
             <input 
               type="text" 
               placeholder="Pesquisar número em atendimento..."
-              className="w-full bg-[#f0f2f5] py-2.5 pl-10 pr-4 rounded-xl text-xs outline-none placeholder:text-neutral-400 focus:bg-white focus:ring-2 focus:ring-green-500/10 transition-all"
+              className="w-full bg-[#f0f2f5] py-2.5 px-4 rounded-xl text-xs outline-none placeholder:text-neutral-400 focus:bg-white focus:ring-2 focus:ring-green-500/10 transition-all"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <div className="absolute left-3.5 top-3 text-neutral-400">
-              <QrCode size={14} />
-            </div>
           </div>
 
-          <div className="flex gap-2">
-            {/* Botões de limpeza removidos por solicitação do usuário */}
-          </div>
-
-          {/* Funnel & Channel Filter Row */}
+        {/* Funnel & Channel Filter Row */}
           <div className="flex gap-1.5 pt-1">
             <select 
               value={filterStage}
@@ -1559,7 +1296,7 @@ export default function WhatsAppSimulator() {
               <option value="Google Ads">Google Ads</option>
               <option value="Facebook">Facebook</option>
               <option value="TikTok">TikTok</option>
-              <option value="whatsapp_real">FRONT ZAP</option>
+              <option value="whatsapp_real">WhatsApp</option>
             </select>
           </div>
         </div>
@@ -1616,7 +1353,7 @@ export default function WhatsAppSimulator() {
                             (autoSource === 'whatsapp_real' || autoSource === 'WhatsApp') ? 'bg-[#25D366]' :
                             'bg-neutral-600'
                           }`}>
-                            {autoSource === 'whatsapp_real' ? 'FRONT ZAP' : autoSource}
+                            {autoSource === 'whatsapp_real' ? 'WhatsApp' : autoSource}
                           </span>
 
                           {/* Funnel Stage Tag */}
@@ -1635,10 +1372,11 @@ export default function WhatsAppSimulator() {
                   </div>
 
                   {/* Quick Action Overlay (Delete / Archive option) - Always visible for better accessibility */}
-                  <div className="absolute right-2 top-2 flex items-center bg-transparent z-10">
+                  <div className="absolute right-2 top-2 flex items-center bg-transparent z-40">
                     <button
                       onClick={(e) => handleDeleteChat(e, id)}
-                      className="p-2 sm:p-1.5 bg-white sm:bg-white/90 hover:bg-red-50 text-neutral-500 hover:text-red-600 rounded-lg border border-neutral-200 hover:border-red-300 shadow-sm transition-all active:scale-90"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="p-2 sm:p-1.5 bg-white/95 hover:bg-red-50 text-neutral-500 hover:text-red-600 rounded-lg border border-neutral-200 hover:border-red-300 shadow-md transition-all active:scale-95"
                       title="Apagar e ocultar número"
                     >
                       <Trash2 size={14} className="sm:size-3.5" />
@@ -1835,7 +1573,7 @@ export default function WhatsAppSimulator() {
                               { id: 'Google Ads', label: 'Google Ads', color: 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100/50', activeColor: 'bg-[#4285F4] text-white border-transparent' },
                               { id: 'Facebook', label: 'Facebook', color: 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100/50', activeColor: 'bg-[#1877F2] text-white border-transparent' },
                               { id: 'TikTok', label: 'TikTok', color: 'bg-neutral-100 text-neutral-800 border-neutral-200 hover:bg-neutral-200/50', activeColor: 'bg-black text-white border-transparent' },
-                              { id: 'whatsapp_real', label: 'FRONT ZAP', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/50', activeColor: 'bg-[#25D366] text-white border-transparent' },
+                              { id: 'whatsapp_real', label: 'WhatsApp', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/50', activeColor: 'bg-[#25D366] text-white border-transparent' },
                             ].map((channel) => {
                               const currentChannel = matchedPatient ? getAutoSource(matchedPatient) : getAutoChatSource(activeChatId || '');
                               const isActive = (currentChannel === channel.id) || (channel.id === 'whatsapp_real' && currentChannel === 'WhatsApp');
@@ -1897,7 +1635,7 @@ export default function WhatsAppSimulator() {
                             return (
                               <div
                                 key={stg.id}
-                                draggable={!isOverStageBtn}
+                                draggable
                                 onDragStart={(e) => {
                                     e.dataTransfer.setData('text/plain', `stage_${colIdx}`);
                                 }}
@@ -1937,8 +1675,6 @@ export default function WhatsAppSimulator() {
                                 `}
                               >
                                 <button
-                                  onMouseEnter={() => setIsOverStageBtn(true)}
-                                  onMouseLeave={() => setIsOverStageBtn(false)}
                                   onClick={() => handleUpdateCRMStage(stg.id)}
                                   className="flex-1 text-left p-1.5 flex items-center justify-between text-neutral-800"
                                 >
@@ -1968,24 +1704,20 @@ export default function WhatsAppSimulator() {
                                     <GripVertical size={12} />
                                   </div>
                                   <button 
-                                    onMouseEnter={() => setIsOverStageBtn(true)}
-                                    onMouseLeave={() => setIsOverStageBtn(false)}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setEditingStage(stg);
-                                      setNewStageTitle(stg.title);
-                                      setNewStageColor(stg.color);
-                                      setStageModalMode('edit');
-                                      setIsStageModalOpen(true);
-                                    }}
-                                    className="p-1 hover:bg-neutral-150 text-neutral-400 hover:text-blue-600 rounded"
-                                    title="Editar etapa"
-                                  >
+                                        setEditingStage(stg);
+                                        setNewStageTitle(stg.title);
+                                        setNewStageColor(stg.color);
+                                        setStageModalMode('edit');
+                                        setIsStageModalOpen(true);
+                                      }}
+                                      className="p-1 hover:bg-neutral-150 text-neutral-400 hover:text-blue-600 rounded"
+                                      title="Editar etapa"
+                                    >
                                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3 L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                                     </button>
                                     <button 
-                                      onMouseEnter={() => setIsOverStageBtn(true)}
-                                      onMouseLeave={() => setIsOverStageBtn(false)}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (window.confirm(`Deseja mesmo excluir a etapa "${stg.title}"?`)) {
@@ -2123,7 +1855,7 @@ export default function WhatsAppSimulator() {
               </div>
               <div className="space-y-3">
                 <h2 className="text-xl font-bold text-neutral-700">
-                  {connectionStatus === 'connected' ? 'Atendimento Digital IA Ativo' : 'Gerenciamento FRONT ZAP'}
+                  {connectionStatus === 'connected' ? 'Atendimento Digital IA Ativo' : 'Gerenciamento WhatsApp Business'}
                 </h2>
                 <p className="text-xs text-neutral-500 leading-relaxed max-w-[280px]">
                   {connectionStatus === 'connected' 

@@ -1,27 +1,75 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+    
+    function getClinic(clinicId) {
+      return get(/databases/$(database)/documents/clinics/$(clinicId));
+    }
+    
+    function isClinicOwner(clinicId) {
+      return isSignedIn() && getClinic(clinicId).data.ownerId == request.auth.uid;
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
-    match /funnel_stages/{stageId} {
-      allow read, write: if request.auth != null;
+
+    match /clinics/{clinicId} {
+      allow read, write: if isSignedIn();
     }
-    match /system/{docId} {
-      allow read, write: if request.auth != null;
+    
+    match /dentists/{dentistId} {
+      allow read, write: if isSignedIn();
     }
+    
     match /pacientes/{pacienteId} {
-      allow read, write: if request.auth != null;
+      allow read: if true;
+      allow write: if isSignedIn();
     }
+    
+    match /appointments/{appointmentId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    match /procedures/{procedureId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    match /specialties/{specialtyId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    match /funnel_stages/{stageId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /deleted_chats/{chatId} {
+      allow read, write: if isSignedIn();
+    }
+
     match /whatsapp_messages/{msgId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
+
     match /whatsapp_chats/{chatId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
-    // Default rule for other collections
+    
+    match /system/{docId} {
+      allow read: if isSignedIn();
+    }
+    
+    // Default Deny
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

@@ -16,7 +16,7 @@ import makeWASocket, {
   Browsers
 } from "@whiskeysockets/baileys";
 import pino from "pino";
-// import QRCode from "qrcode";
+import QRCode from "qrcode";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 // import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
@@ -69,14 +69,7 @@ const ai = new GoogleGenAI({
 async function getGlobalOwnerInfo() {
   try {
     const clinics = await db.collection('clinics').limit(1).get();
-    if (clinics.empty) {
-      // Fallback: Check if there's any user in patients too as a secondary way to find the tenant
-      const patients = await db.collection('pacientes').limit(1).get();
-      if (!patients.empty) {
-        return { ownerId: patients.docs[0].data().ownerId };
-      }
-      return null;
-    }
+    if (clinics.empty) return null;
     const clinic = clinics.docs[0].data();
     return {
       ownerId: clinic.ownerId,
@@ -96,72 +89,6 @@ let lastHistory: { chats: any[], messages: any[] } | null = null;
 let contactsCache: Record<string, string> = {};
 let isConnecting = false;
 let forceDisconnect = false;
-let qrActiveIntent = false; // Intent state from DB
-
-// Sync WA Status to Firestore
-async function syncStatusToFirestore(overrides = {}) {
-  try {
-    const ownerInfo = await getGlobalOwnerInfo();
-    if (!ownerInfo) {
-      debugLog("Status sync skipped: No owner info found yet.");
-      return;
-    }
-
-    const statusRef = db.collection('whatsapp_status').doc(ownerInfo.ownerId);
-    const updateData: any = {
-      status: connectionStatus,
-      qrCode: qrCode,
-      updatedAt: FieldValue.serverTimestamp(),
-      isQrActive: qrActiveIntent,
-      ...overrides
-    };
-    
-    if (sock?.user) updateData.user = sock.user;
-    else if (connectionStatus !== 'connected') updateData.user = null;
-
-    await statusRef.set(updateData, { merge: true });
-    debugLog(`Status synced to Firestore for ${ownerInfo.ownerId}: ${connectionStatus}`);
-  } catch (err) {
-    console.error("Error syncing WA status to Firestore:", err);
-  }
-}
-
-// Watch for intent changes in DB with retry logic
-let watchRetryCount = 0;
-async function watchWAIntent() {
-  const ownerInfo = await getGlobalOwnerInfo();
-  if (!ownerInfo) {
-    if (watchRetryCount < 10) {
-      watchRetryCount++;
-      debugLog(`Retrying watchWAIntent in 2s... (Attempt ${watchRetryCount})`);
-      setTimeout(watchWAIntent, 2000);
-    }
-    return;
-  }
-
-  debugLog(`Starting Firestore watch on whatsapp_status for ${ownerInfo.ownerId}`);
-  db.collection('whatsapp_status').doc(ownerInfo.ownerId).onSnapshot(doc => {
-    if (doc.exists) {
-      const data = doc.data();
-      debugLog(`Firestore Watch Update for ${ownerInfo.ownerId}: isQrActive=${data?.isQrActive}, status=${data?.status}`);
-      if (data && data.isQrActive !== undefined) {
-        // Se mudou de false para true via DB (remoto), iniciamos conexão
-        if (data.isQrActive && !qrActiveIntent && connectionStatus === 'disconnected') {
-          debugLog("QR Active Intent detected from DB remote change. Connecting...");
-          qrActiveIntent = true;
-          connectToWhatsApp();
-        }
-        qrActiveIntent = data.isQrActive;
-      }
-    }
-  }, err => {
-    console.error("Firestore Watch Error:", err);
-    setTimeout(watchWAIntent, 5000);
-  });
-}
-
-// Call watch on startup
-watchWAIntent();
 
 function isRegisteredContact(jid: string, name?: string): boolean {
   // MUST strictly only be individual physical chats on WhatsApp Web
@@ -234,12 +161,12 @@ const broadcast = (data: any) => {
 };
 
 const debugLog = (msg: string) => {
-  try { fs.appendFileSync("/tmp/wa-debug.log", msg + "\n"); } catch(e) {}
+  try { fs.appendFileSync("wa-debug.log", msg + "\n"); } catch(e) {}
 };
 
 function hasSavedSession() {
   try {
-    return fs.existsSync(path.join('/tmp/wa_auth', 'creds.json'));
+    return fs.existsSync(path.join('wa_auth', 'creds.json'));
   } catch (e) {
     return false;
   }
@@ -260,7 +187,6 @@ async function connectToWhatsApp() {
   debugLog("connectToWhatsApp called");
   connectionStatus = 'connecting';
   broadcast({ type: 'status', status: 'connecting' });
-  syncStatusToFirestore();
 
   // Cleanup old socket if exists
   if (sock) {
@@ -277,12 +203,12 @@ async function connectToWhatsApp() {
   }
 
   try {
-    // Ensure /tmp/wa_auth exists and is writable
-    if (!fs.existsSync('/tmp/wa_auth')) {
-      fs.mkdirSync('/tmp/wa_auth', { recursive: true });
+    // Ensure wa_auth exists and is writable
+    if (!fs.existsSync('wa_auth')) {
+      fs.mkdirSync('wa_auth', { recursive: true });
     }
     
-    const { state, saveCreds } = await useMultiFileAuthState('/tmp/wa_auth');
+    const { state, saveCreds } = await useMultiFileAuthState('wa_auth');
     
     // Default version to use if fetch fails or hangs
     let version = [2, 3000, 1015901307] as [number, number, number];
@@ -307,8 +233,8 @@ async function connectToWhatsApp() {
       logger: pino({ level: 'info' }), // Increased log level for debug
       browser: Browsers.macOS('Chrome'), // Consistent browser string
       syncFullHistory: false,
-      connectTimeoutMs: 120000, // Increase timeout for slower networks
-      defaultQueryTimeoutMs: 120000,
+      connectTimeoutMs: 60000, // Increase timeout for slower networks
+      defaultQueryTimeoutMs: 60000,
       keepAliveIntervalMs: 30000,
       generateHighQualityLinkPreview: false,
       markOnlineOnConnect: true
@@ -336,38 +262,13 @@ async function connectToWhatsApp() {
         debugLog("Generating QR Code from update.qr - Length: " + qr.length);
         console.log("WhatsApp QR Code received - generating base64...");
         try {
-          // qrCode = await QRCode.toDataURL(qr);
-          qrCode = qr;
+          qrCode = await QRCode.toDataURL(qr);
           debugLog("QR Code generated successfully as base64");
           
           connectionStatus = 'qr';
           isConnecting = false;
           broadcast({ type: 'status', status: 'qr', qr: qrCode });
-          
-          const expiresAt = Date.now() + 10000;
-          syncStatusToFirestore({ qrExpiresAt: expiresAt });
-          
-          // Server-side expiration timer for the QR
-          setTimeout(async () => {
-             if (connectionStatus === 'qr') {
-                debugLog("QR Code expired on server-side (10s limit)");
-                qrCode = null;
-                qrActiveIntent = false;
-                connectionStatus = 'disconnected';
-                broadcast({ type: 'status', status: 'disconnected', qr: null });
-                syncStatusToFirestore({ qrCode: null, isQrActive: false, qrExpiresAt: null });
-                
-                // Force logout in baileys to stop QR refs
-                try {
-                   if (sock) {
-                      await sock.logout().catch(() => {});
-                      sock = null;
-                   }
-                } catch(e) {}
-             }
-          }, 10000);
-
-          console.log("QR Code broadcasted to clients with 10s expiration");
+          console.log("QR Code broadcasted to clients");
         } catch (e) {
           debugLog("QR Code generation error: " + (e as any).message);
           isConnecting = false;
@@ -380,18 +281,6 @@ async function connectToWhatsApp() {
         const error = (lastDisconnect?.error as any);
         const statusCode = error?.output?.statusCode;
         const shouldReconnect = !forceDisconnect && (statusCode !== DisconnectReason.loggedOut);
-        
-        // Tratar erro 408 (QR refs attempts ended) especificamente
-        if (statusCode === 408) {
-          debugLog("QR Timeout (408) detected - forcing session clean and refresh");
-          try {
-            if (fs.existsSync('/tmp/wa_auth')) {
-              fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
-              debugLog("Cleaned /tmp/wa_auth due to 408 error");
-            }
-          } catch(e) {}
-        }
-
         debugLog(`closed: ${error?.message || error}, reconnecting: ${shouldReconnect}, forceDisconnect: ${forceDisconnect}`);
         console.log('WhatsApp connection closed:', error?.message || error, 'reconnecting:', shouldReconnect);
         
@@ -402,15 +291,13 @@ async function connectToWhatsApp() {
         if (shouldReconnect) {
           connectionStatus = 'connecting';
           broadcast({ type: 'status', status: 'connecting' });
-          syncStatusToFirestore();
           setTimeout(connectToWhatsApp, 3000);
         } else {
           connectionStatus = 'disconnected';
           broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
-          syncStatusToFirestore({ qrCode: null });
           try {
-            if (fs.existsSync('/tmp/wa_auth')) {
-              fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
+            if (fs.existsSync('wa_auth')) {
+              fs.rmSync('wa_auth', { recursive: true, force: true });
             }
           } catch(e) {}
         }
@@ -421,7 +308,6 @@ async function connectToWhatsApp() {
         connectionStatus = 'connected';
         isConnecting = false;
         broadcast({ type: 'status', status: 'connected', user: sock.user });
-        syncStatusToFirestore({ qrCode: null });
       }
     });
 
@@ -751,14 +637,6 @@ wss.on('connection', (ws) => {
 // API Routes
 
 // Health check
-app.get("/api/wa-logs", (req, res) => {
-  try {
-    const logs = fs.existsSync("/tmp/wa-debug.log") ? fs.readFileSync("/tmp/wa-debug.log", "utf-8") : "No logs found";
-    res.send(logs);
-  } catch(e: any) {
-    res.send("Error reading logs: " + e.message);
-  }
-});
 app.get("/api/wa-status", (req, res) => {
   let enrichedHistory = null;
   if (lastHistory) {
@@ -796,10 +674,6 @@ app.post("/api/wa-connect", async (req, res) => {
   // Clear any existing connecting locks if manually re-triggered
   isConnecting = false;
   
-  // Update intent
-  qrActiveIntent = true;
-  syncStatusToFirestore({ isQrActive: true });
-
   connectToWhatsApp().then(() => {
     res.json({ success: true });
   }).catch((err) => {
@@ -814,17 +688,15 @@ app.post("/api/wa-disconnect", async (req, res) => {
   qrCode = null;
   connectionStatus = 'disconnected';
   isConnecting = false;
-  qrActiveIntent = false;
-  syncStatusToFirestore({ qrCode: null, isQrActive: false });
 
   const cleanup = () => {
     try {
-      if (fs.existsSync('/tmp/wa_auth')) {
-        fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
-        debugLog("/tmp/wa_auth deleted successfully on explicit disconnect");
+      if (fs.existsSync('wa_auth')) {
+        fs.rmSync('wa_auth', { recursive: true, force: true });
+        debugLog("wa_auth deleted successfully on explicit disconnect");
       }
     } catch(e: any) {
-      debugLog("Failed to delete /tmp/wa_auth on explicit disconnect: " + e.message);
+      debugLog("Failed to delete wa_auth on explicit disconnect: " + e.message);
     }
     sock = null;
     broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
@@ -857,77 +729,6 @@ app.post("/api/wa-disconnect", async (req, res) => {
   res.json({ success: true });
 });
 
-app.post("/api/wa-clear-all", async (req, res) => {
-  debugLog("FULL CLEAR requested via /api/wa-clear-all");
-  forceDisconnect = true;
-  lastHistory = null;
-  qrCode = null;
-  connectionStatus = 'disconnected';
-  isConnecting = false;
-  qrActiveIntent = false;
-
-  // 1. Terminate & Logout socket
-  if (sock) {
-    try {
-      if (sock.ws) sock.ws.terminate();
-      await sock.logout().catch(() => {});
-      sock.end(undefined);
-    } catch(e) {}
-  }
-  sock = null;
-
-  // 2. Clear Auth Directory
-  try {
-    if (fs.existsSync('/tmp/wa_auth')) {
-      fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
-      debugLog("/tmp/wa_auth deleted in FULL CLEAR");
-    }
-  } catch(e) {}
-
-  // 3. Clear DB Collections for this owner
-  try {
-    const ownerInfo = await getGlobalOwnerInfo();
-    if (ownerInfo) {
-      const ownerId = ownerInfo.ownerId;
-      
-      // Delete messages
-      const msgs = await db.collection('whatsapp_messages').where('ownerId', '==', ownerId).get();
-      const msgBatch = db.batch();
-      msgs.docs.forEach(doc => msgBatch.delete(doc.ref));
-      await msgBatch.commit();
-
-      // Delete chats
-      const chats = await db.collection('whatsapp_chats').where('ownerId', '==', ownerId).get();
-      const chatBatch = db.batch();
-      chats.docs.forEach(doc => chatBatch.delete(doc.ref));
-      await chatBatch.commit();
-
-      // Delete deleted_chats index
-      const del = await db.collection('deleted_chats').where('ownerId', '==', ownerId).get();
-      const delBatch = db.batch();
-      del.docs.forEach(doc => delBatch.delete(doc.ref));
-      await delBatch.commit();
-
-      // Reset WA Status
-      await db.collection('whatsapp_status').doc(ownerId).set({
-        status: 'disconnected',
-        qrCode: null,
-        user: null,
-        isQrActive: false,
-        qrExpiresAt: null,
-        updatedAt: FieldValue.serverTimestamp()
-      }, { merge: true });
-
-      debugLog(`DB Collections cleared for owner ${ownerId}`);
-    }
-  } catch(err) {
-    console.error("Error clearing DB in FULL CLEAR:", err);
-  }
-
-  broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
-  res.json({ success: true, message: "Todos os dados foram removidos com sucesso." });
-});
-
 app.post("/api/wa-reset", (req, res) => {
   debugLog("Reset/Refresh QR Code requested via /api/wa-reset");
   forceDisconnect = true;
@@ -938,12 +739,12 @@ app.post("/api/wa-reset", (req, res) => {
 
   const cleanupAndReconnect = () => {
     try {
-      if (fs.existsSync('/tmp/wa_auth')) {
-        fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
-        debugLog("/tmp/wa_auth deleted successfully on explicit reset");
+      if (fs.existsSync('wa_auth')) {
+        fs.rmSync('wa_auth', { recursive: true, force: true });
+        debugLog("wa_auth deleted successfully on explicit reset");
       }
     } catch(e: any) {
-      debugLog("Failed to delete /tmp/wa_auth on explicit reset: " + e.message);
+      debugLog("Failed to delete wa_auth on explicit reset: " + e.message);
     }
     sock = null;
     broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
@@ -967,7 +768,7 @@ app.post("/api/wa-reset", (req, res) => {
     
     // Safety fallback: force clear and reconnect after 2.5s if not executed yet
     setTimeout(() => {
-      if (sock || fs.existsSync('/tmp/wa_auth')) {
+      if (sock || fs.existsSync('wa_auth')) {
         cleanupAndReconnect();
       }
     }, 2500);

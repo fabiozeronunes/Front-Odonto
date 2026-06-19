@@ -28,7 +28,7 @@ import {
   ChevronDown,
   TrendingUp
 } from 'lucide-react';
-import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db, signInAnonymously } from './lib/firebase';
+import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db } from './lib/firebase';
 import { User } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -136,22 +136,10 @@ export default function App() {
     let redirectChecking = sessionStorage.getItem('auth_in_progress') === 'true';
 
     // 1. Initial Auth Check and Persistence Listener
-    const unsubscribe = auth.onAuthStateChanged(async (u) => {
+    const unsubscribe = auth.onAuthStateChanged((u) => {
       console.log("Auth state changed:", u?.email || "No user");
       
       const isDemoLoggedIn = localStorage.getItem('google_demo_logged_in_v1') === 'true';
-      
-      // Auto-login anonymously if in demo mode but no Firebase user session exists
-      if (isDemoLoggedIn && !u) {
-        console.log("[Auth Trace] Demo mode detected with no Firebase session. Signing in anonymously...");
-        try {
-          await signInAnonymously(auth);
-          return; // The listener will fire again once signs in
-        } catch (err) {
-          console.error("[Auth Trace] Failed to sign in anonymously for demo mode:", err);
-        }
-      }
-
       if (isDemoLoggedIn || (u && u.isAnonymous)) {
         console.log("[Auth Trace] Demo or Anonymous user is logged in, overriding details with mock user.");
         const mockGoogleUser = {
@@ -187,9 +175,7 @@ export default function App() {
         setIsSidebarOpen(true); // Conectar com menu aberto
         setActiveTab(prev => {
           const params = new URLSearchParams(window.location.search);
-          const tabParam = params.get('tab');
-          const savedTab = localStorage.getItem('activeTab');
-          return tabParam || savedTab || prev || 'dashboard';
+          return params.get('tab') || prev || 'dashboard';
         }); // com tela dashboard em segundo plano ou url parametrizada
         localStorage.setItem('logged_in_view', 'dashboard');
       } else {
@@ -339,8 +325,7 @@ export default function App() {
       
       setIsSidebarOpen(true); // Abre o menu quando conecta
       if (view !== 'dashboard') {
-        const savedTab = localStorage.getItem('activeTab');
-        setActiveTab(savedTab || 'dashboard'); // Define dashboard como tela principal apenas se não houver aba salva
+        setActiveTab('dashboard'); // Define dashboard como tela principal apenas na entrada inicial
       }
       if (targetView && ['login', 'dashboard', 'landing'].includes(targetView)) {
         setView(targetView as any);
@@ -392,7 +377,7 @@ export default function App() {
     },
     { id: 'patients', label: 'PRONTUÁRIO DIGITAL', icon: Users },
     { id: 'ads', label: 'ANÚNCIOS AI', icon: Megaphone },
-    { id: 'whatsapp', label: 'FRONT ZAP', icon: MessageSquare },
+    { id: 'whatsapp', label: 'AGENTE WHATSAPP', icon: MessageSquare },
     { id: 'agenda', label: 'AGENDA', icon: Calendar },
     { id: 'crm', label: 'CRM / FUNIL', icon: Users },
     { id: 'connections', label: 'CONEXÕES', icon: Link2 },
@@ -437,9 +422,7 @@ export default function App() {
       setIsSidebarOpen(true);
       setActiveTab(prev => {
         const params = new URLSearchParams(window.location.search);
-        const tabParam = params.get('tab');
-        const savedTab = localStorage.getItem('activeTab');
-        return tabParam || savedTab || prev || 'dashboard';
+        return params.get('tab') || prev || 'dashboard';
       });
       localStorage.setItem('logged_in_view', 'dashboard');
       return;
@@ -450,9 +433,7 @@ export default function App() {
     setIsSidebarOpen(true); // Conecta com menu aberto
     setActiveTab(prev => {
       const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get('tab');
-      const savedTab = localStorage.getItem('activeTab');
-      return tabParam || savedTab || prev || 'dashboard';
+      return params.get('tab') || prev || 'dashboard';
     }); // Dashboard ativo atrás ou url parametrizada
     localStorage.setItem('logged_in_view', 'dashboard');
   };

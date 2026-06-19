@@ -40,19 +40,15 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [deleteStageId, setDeleteStageId] = useState<string | null>(null);
   const [editingStage, setEditingStage] = useState<any | null>(null);
   const [newStageTitle, setNewStageTitle] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [isOverHeaderButton, setIsOverHeaderButton] = useState(false);
   
   // Dynamic stages state with localStorage loading
   const [stages, setStages] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('wa_crm_funnel_stages');
-      if (!saved || saved === 'undefined') return columns;
-      return JSON.parse(saved);
+      return saved ? JSON.parse(saved) : columns;
     } catch (e) {
       return columns;
     }
@@ -67,6 +63,29 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const getBgColorClass = (colorStr: string) => {
     if (!colorStr) return 'bg-blue-500';
     return colorStr.split(' ')[0] || 'bg-blue-500';
+  };
+
+  // Função para criar etapas padrão se não existirem
+  const seedDefaultStages = async (userId: string) => {
+    try {
+      console.log("[CRM] Iniciando criação de etapas padrão...");
+      const batch = writeBatch(db);
+      columns.forEach((col, idx) => {
+        const stageId = `${userId}_default_${col.id}`;
+        const stageRef = doc(db, 'funnel_stages', stageId);
+        batch.set(stageRef, {
+          title: col.title,
+          color: col.color,
+          order: idx,
+          ownerId: userId,
+          createdAt: serverTimestamp()
+        }, { merge: true });
+      });
+      await batch.commit();
+      console.log("[CRM] Etapas padrão criadas com sucesso.");
+    } catch (err) {
+      console.error("[CRM] Erro ao criar etapas padrão:", err);
+    }
   };
 
   // Drag and drop states
@@ -222,41 +241,29 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
     setNewStageTitle('');
   };
 
-  const performDeleteStage = async (id: string) => {
-    console.log("performDeleteStage called for ID:", id);
-    if (!auth.currentUser) {
-        console.error("User not authenticated.");
-        return;
-    }
+  const deleteStage = async (id: string) => {
+    if (!window.confirm("Deseja realmente excluir esta etapa? Pacientes nesta etapa serão movidos para a primeira etapa disponível.")) return;
     
     const targetStage = stages.find(s => s.id === id);
-    if (!targetStage) {
-        console.error("Target stage not found in local state:", id);
-        return;
-    }
+    if (!targetStage) return;
 
-    // Determine the default stage to move patients to
     const filteredStages = stages.filter(s => s.id !== id);
     const defaultStageId = filteredStages[0]?.id || 'lead';
-    console.log("Moving patients to stage ID:", defaultStageId);
 
     // Move patients in this stage to the first available stage
     const pToMove = patients.filter(p => isMatchStage(p.status, id));
-    console.log("Patients to move:", pToMove.length);
     for (const p of pToMove) {
-      console.log("Moving patient:", p.id, " from ", id, " to ", defaultStageId);
       await handleUpdateStatus(p.id, defaultStageId);
     }
 
-    // Update UI immediately
     updateStages(filteredStages);
 
     // Delete in Firestore
-    try {
-        console.log("Deleting Firestore document: funnel_stages/", id);
+    if (auth.currentUser) {
+      try {
         await deleteDoc(doc(db, 'funnel_stages', id));
         
-        // Trigger global sync
+        // Gatilho de sincronização global
         const syncRef = doc(db, 'system', `sync_${auth.currentUser.uid}`);
         await setDoc(syncRef, { 
           timestamp: Date.now().toString(),
@@ -264,16 +271,11 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           updatedAt: serverTimestamp()
         }, { merge: true });
 
-        console.log("[CRM] Etapa excluída e sincronizada com sucesso:", id);
-    } catch (err) {
+        console.log("[CRM] Etapa excluída e sincronizada:", id);
+      } catch (err) {
         console.error("Error deleting stage from Firestore:", err);
-        alert("Erro ao excluir etapa no banco de dados. Verifique o console.");
+      }
     }
-  };
-
-  const deleteStage = (id: string) => {
-      setDeleteStageId(id);
-      setIsDeleteConfirmOpen(true);
   };
 
   // Form State
@@ -331,7 +333,12 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
 
         // Load dynamic stages synced from db
         const funnelStagesQuery = query(collection(db, 'funnel_stages'), where('ownerId', '==', user.uid));
-        unsubFunnelStages = onSnapshot(funnelStagesQuery, async (snapshot) => {
+        unsubFunnelStages = onSnapshot(funnelStagesQuery, (snapshot) => {
+          if (snapshot.empty) {
+            seedDefaultStages(user.uid);
+            return;
+          }
+
           const loadedStages = snapshot.docs.map(d => {
             const data = d.data();
             return {
@@ -342,39 +349,16 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
               originalColor: data.color
             };
           });
-          if (loadedStages.length > 0) {
-            loadedStages.sort((a, b) => a.order - b.order);
-            updateStages(loadedStages);
-          } else {
-            // Seed stages if empty and user is logged in
-            try {
-              if ((window as any)._isSeedingStages) return;
-              (window as any)._isSeedingStages = true;
-
-              for (let i = 0; i < columns.length; i++) {
-                const col = columns[i];
-                await setDoc(doc(db, 'funnel_stages', `${user.uid}_${col.id}`), {
-                  title: col.title,
-                  color: col.color,
-                  order: i,
-                  ownerId: user.uid,
-                  createdAt: new Date().toISOString()
-                });
-              }
-              (window as any)._isSeedingStages = false;
-            } catch (err) {
-              console.error("[CRM] Error seeding default stages:", err);
-              (window as any)._isSeedingStages = false;
-              updateStages(columns);
-            }
-          }
+          
+          loadedStages.sort((a, b) => a.order - b.order);
+          updateStages(loadedStages);
         });
       } else {
         setClinics([]);
         setPatients([]);
         try {
           const saved = localStorage.getItem('wa_crm_funnel_stages');
-          if (saved && saved !== 'undefined') {
+          if (saved) {
             updateStages(JSON.parse(saved));
           } else {
             updateStages(columns);
@@ -406,25 +390,18 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   };
 
   const handleDeleteLead = async (e: React.MouseEvent, patientId: string) => {
-    console.log("handleDeleteLead called for ID:", patientId);
     e.preventDefault();
     e.stopPropagation();
     
     if (!patientId) return;
 
-    if (!window.confirm("Deseja realmente excluir este lead permanentemente?")) {
-        console.log("Deletion cancelled by user.");
-        return;
-    }
+    if (!window.confirm("Deseja realmente excluir este lead permanentemente?")) return;
     
-    console.log("Deletion confirmed, proceeding for ID:", patientId);
     // Optimistic local update
     setPatients(prev => prev.filter(p => p?.id !== patientId));
 
     try {
-      console.log("Attempting to delete document from Firestore");
       await deleteDoc(doc(db, 'pacientes', patientId));
-      console.log("Document deleted successfully");
     } catch (error) {
       console.error("Error deleting lead:", error);
       alert("Erro ao excluir do banco de dados. Tente novamente.");
@@ -520,17 +497,17 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-6 select-none min-h-[600px]">
+        <div className="flex gap-4 pb-6 overflow-x-auto lg:overflow-x-visible lg:flex-wrap select-none min-h-[600px] custom-scrollbar scroll-smooth">
           {stages.map((column, colIdx) => (
             <motion.div 
               key={column.id || colIdx}
               layout
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
-              className="space-y-4 w-full transition-all duration-300 rounded-2xl p-1"
+              className="space-y-4 shrink-0 w-[280px] sm:w-[320px] lg:w-[calc(33.333%-1rem)] xl:w-[calc(25%-1rem)] 2xl:w-[calc(20%-1rem)] transition-all duration-300 rounded-2xl p-1"
             >
               <div 
-                draggable={!isOverHeaderButton}
+                draggable
                 onDragStart={(e) => handleDragStageStart(e, colIdx)}
                 className="flex items-center justify-between px-2 py-1.5 hover:bg-neutral-50 rounded-xl cursor-grab active:cursor-grabbing transition-colors border border-transparent hover:border-neutral-200/60"
                 title="Arraste por este cabeçalho para reordenar a etapa"
@@ -541,34 +518,24 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
-                    draggable="false"
-                    onMouseEnter={() => setIsOverHeaderButton(true)}
-                    onMouseLeave={() => setIsOverHeaderButton(false)}
-                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
-                      e.preventDefault();
                       setEditingStage(column);
                       setNewStageTitle(column.title);
                       setIsStageModalOpen(true);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded relative z-50 cursor-pointer"
-                    title="Editar Etapa"
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded"
                   >
                     <Edit2 size={12} />
                   </button>
                   <button 
-                    draggable="false"
-                    onMouseEnter={() => setIsOverHeaderButton(true)}
-                    onMouseLeave={() => setIsOverHeaderButton(false)}
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
-                      e.stopPropagation();
                       e.preventDefault();
+                      e.stopPropagation();
                       deleteStage(column.id);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-50 cursor-pointer"
-                    title="Excluir Etapa"
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-20"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -595,25 +562,9 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                     className="bg-white p-4 rounded-xl shadow-xs border border-neutral-200 cursor-grab active:cursor-grabbing group hover:border-blue-400 hover:shadow-xs transition-all duration-150"
                   >
                     <div className="flex justify-between items-start mb-3">
-                      <div className="min-w-0 pr-2">
-                        <h5 className="font-bold text-neutral-800 text-xs sm:text-sm truncate">{patient.name}</h5>
+                      <div>
+                        <h5 className="font-bold text-neutral-800 text-xs sm:sm">{patient.name}</h5>
                         <p className="text-[10px] text-neutral-400 font-medium">{patient.phone}</p>
-                        
-                        {/* Selector de Etapa amigável para Desktop/Mobile/Tablet */}
-                        <div className="mt-2">
-                          <select
-                            value={stages.find(stg => isMatchStage(patient.status, stg.id))?.id || column.id}
-                            onChange={(e) => handleUpdateStatus(patient.id, e.target.value)}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            className="w-full text-[10px] font-black uppercase text-neutral-600 bg-neutral-50/80 hover:bg-neutral-100 border border-neutral-200 rounded-lg px-2 py-1 outline-none transition-all cursor-pointer"
-                          >
-                            {stages.map(stg => (
-                              <option key={stg.id} value={stg.id}>
-                                🏷️ {stg.title}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
                       </div>
                       <div className="flex gap-1">
                         {stages.filter(c => !isMatchStage(patient.status, c.id)).map(c => (
@@ -693,10 +644,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                         {patient.lastContactAt ? 'Ativo' : 'Novo'}
                       </span>
                       <button 
-                        onClick={(e) => {
-                          console.log("Delete button clicked, patientId:", patient.id);
-                          handleDeleteLead(e, patient.id);
-                        }}
+                        onClick={(e) => handleDeleteLead(e, patient.id)}
                         onMouseDown={(e) => e.stopPropagation()}
                         draggable="false"
                         onDragStart={(e) => e.stopPropagation()}
@@ -847,37 +795,6 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           </div>
         )}
       </AnimatePresence>
-      
-      {isDeleteConfirmOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Confirmar Exclusão</h3>
-            <p className="text-gray-600 mb-6 font-normal">
-              Deseja realmente excluir esta etapa? Pacientes nesta etapa serão movidos para a primeira etapa disponível.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setIsDeleteConfirmOpen(false)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  if (deleteStageId) {
-                    performDeleteStage(deleteStageId);
-                  }
-                  setIsDeleteConfirmOpen(false);
-                  setDeleteStageId(null);
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
-              >
-                Excluir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
