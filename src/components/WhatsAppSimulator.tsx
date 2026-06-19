@@ -221,6 +221,14 @@ export default function WhatsAppSimulator() {
   const socketRef = useRef<WebSocket | null>(null);
   const [showCRMDetails, setShowCRMDetails] = useState(() => window.innerWidth >= 1280);
 
+  // Auto-connect if disconnected on mount
+  useEffect(() => {
+    if (connectionStatus === 'disconnected') {
+      console.log("Triggering auto-connect on mount...");
+      handleConnect();
+    }
+  }, []); // Run only once
+
   // CRM/Patients Integration State
   const [patients, setPatients] = useState<Patient[]>([]);
   const [clinics, setClinics] = useState<Clinic[]>([]);
