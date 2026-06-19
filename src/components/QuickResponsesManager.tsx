@@ -40,15 +40,22 @@ export default function QuickResponsesManager() {
 
   const handleAdd = async () => {
     if (!newResponse.trim() || !auth.currentUser) {
-        console.error("Missing inputs or user", { text: newResponse, user: auth.currentUser });
+        alert("Erro: Usuário não autenticado ou campo vazio.");
         return;
     }
     setIsSaving(true);
     try {
-        await addDoc(collection(db, 'quick_responses'), { text: newResponse.trim(), tag: newTag, ownerId: auth.currentUser.uid, createdAt: serverTimestamp() });
+        await addDoc(collection(db, 'quick_responses'), { 
+            text: newResponse.trim(), 
+            tag: newTag, 
+            ownerId: auth.currentUser.uid, 
+            createdAt: serverTimestamp() 
+        });
         setNewResponse('');
+        setNewTag(categories[0]);
     } catch (e) {
         console.error("Error adding doc: ", e);
+        alert("Erro ao salvar mensagem.");
     }
     setIsSaving(false);
   };

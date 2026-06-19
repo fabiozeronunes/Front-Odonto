@@ -1586,18 +1586,23 @@ export default function WhatsAppSimulator() {
               {/* Quick Responses */}
               {quickResponses.length > 0 && (
                 <div className="px-4 py-2 border-t border-neutral-300/20 bg-[#f0f2f5]">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest leading-none">Filtrar:</span>
-                    <select 
-                      className="text-[10px] p-1 rounded-lg border border-neutral-200 bg-white"
-                      value={filterChatTag}
-                      onChange={(e) => setFilterChatTag(e.target.value)}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest leading-none mr-1">Filtrar:</span>
+                    <button
+                        onClick={() => setFilterChatTag('Todas')}
+                        className={`text-[10px] px-2 py-1 rounded-full border ${filterChatTag === 'Todas' ? 'bg-neutral-800 text-white border-neutral-800' : 'bg-white text-neutral-600 border-neutral-200'}`}
                     >
-                      <option value="Todas">Todas</option>
-                      {Array.from(new Set(quickResponses.map(r => r.tag))).map(tag => (
-                        <option key={tag} value={tag}>{tag}</option>
-                      ))}
-                    </select>
+                        Todas
+                    </button>
+                    {Array.from(new Set(quickResponses.map(r => r.tag))).map(tag => (
+                        <button
+                          key={tag}
+                          onClick={() => setFilterChatTag(tag)}
+                          className={`text-[10px] px-2 py-1 rounded-full border ${filterChatTag === tag ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-neutral-600 border-neutral-200'}`}
+                        >
+                            {tag}
+                        </button>
+                    ))}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {quickResponses
