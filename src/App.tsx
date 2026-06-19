@@ -392,7 +392,7 @@ export default function App() {
     },
     { id: 'patients', label: 'PRONTUÁRIO DIGITAL', icon: Users },
     { id: 'ads', label: 'ANÚNCIOS AI', icon: Megaphone },
-    { id: 'whatsapp', label: 'AGENTE WHATSAPP', icon: MessageSquare },
+    { id: 'whatsapp', label: 'FRONT ZAP', icon: MessageSquare },
     { id: 'agenda', label: 'AGENDA', icon: Calendar },
     { id: 'crm', label: 'CRM / FUNIL', icon: Users },
     { id: 'connections', label: 'CONEXÕES', icon: Link2 },

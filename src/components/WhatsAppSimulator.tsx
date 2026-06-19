@@ -1122,7 +1122,7 @@ export default function WhatsAppSimulator() {
   };
 
   const handleDisconnect = async () => {
-    if (window.confirm("Deseja realmente terminar a sessão e desconectar esta conta do WhatsApp?")) {
+    if (window.confirm("Deseja realmente terminar a sessão e desconectar esta conta do FRONT ZAP?")) {
       setConnectionStatus('connecting');
       setQrCode(null);
       setConnectedUser(null);
@@ -1194,7 +1194,7 @@ export default function WhatsAppSimulator() {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      alert("Histórico de WhatsApp limpo com sucesso.");
+      alert("Histórico de FRONT ZAP limpo com sucesso.");
     } catch (err) {
       console.error("Erro ao limpar histórico:", err);
       alert("Erro ao apagar dados. Tente novamente.");
@@ -1396,7 +1396,7 @@ export default function WhatsAppSimulator() {
                 </span>
                 <span className="text-[8px] font-bold text-green-600 uppercase tracking-widest block flex items-center gap-1">
                   <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping" />
-                  Ativo no Watts
+                  Ativo no FRONT ZAP
                 </span>
               </div>
             )}
@@ -1414,16 +1414,8 @@ export default function WhatsAppSimulator() {
               <span>Painel</span>
             </a>
             
-            {(connectionStatus === 'connected' || connectionStatus === 'qr' || connectionStatus === 'connecting') && (
-              <button 
-                onClick={handleDisconnect} 
-                title="Terminar Sessão e Desconectar" 
-                className="flex items-center gap-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-650 text-[10px] font-extrabold uppercase tracking-widest py-1.5 px-2.5 rounded-xl transition-all border border-red-200 shadow-xs cursor-pointer"
-                id="btn-logout"
-              >
-                {connectionStatus === 'connected' ? 'Sair' : 'Cancelar'}
-              </button>
-            )}
+            {/* Removido botões Sair/Cancelar por solicitação do usuário */}
+            
             
             <button className="hover:text-[#128C7E] p-1 rounded-lg hover:bg-white/50">
               <MoreVertical size={16} />
@@ -1438,7 +1430,7 @@ export default function WhatsAppSimulator() {
               qrCode ? (
                 <div className="flex flex-col items-center gap-4">
                   <div className="text-center space-y-1">
-                    <h3 className="text-xs font-black text-neutral-800 uppercase tracking-widest text-[#128C7E]">Conectar WhatsApp</h3>
+                    <h3 className="text-xs font-black text-neutral-800 uppercase tracking-widest text-[#128C7E]">Conectar FRONT ZAP</h3>
                     <p className="text-[10px] text-neutral-400 max-w-[200px] leading-relaxed mx-auto">Sincronize com seu smartphone abrindo o WhatsApp &gt; Aparelhos Conectados &gt; Escanear QR Code</p>
                   </div>
                   <div className="bg-white p-4 rounded-2xl shadow-lg border-2 border-emerald-50 flex items-center justify-center transition-all hover:shadow-xl">
@@ -1482,7 +1474,7 @@ export default function WhatsAppSimulator() {
                   <QrCode size={30} className="stroke-[1.5]" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-[11px] font-black text-neutral-700 uppercase tracking-widest">WhatsApp Desconectado</h3>
+                  <h3 className="text-[11px] font-black text-neutral-700 uppercase tracking-widest">FRONT ZAP Desconectado</h3>
                   <p className="text-[10px] text-neutral-400 max-w-[230px] leading-relaxed mx-auto">
                     Inicie a sincronização de leitura para ativar os atendimentos do agente e capturar leads automaticamente.
                   </p>
@@ -1492,7 +1484,7 @@ export default function WhatsAppSimulator() {
                   className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-[#128C7E] hover:bg-[#075e54] text-white rounded-xl text-[10px] font-black tracking-widest uppercase transition-all shadow-xs active:scale-95 cursor-pointer"
                 >
                   <RefreshCw size={11} className="stroke-[2.5]" />
-                  Iniciar Atendimento WhatsApp
+                  Iniciar Atendimento FRONT ZAP
                 </button>
               </div>
             )}
@@ -1515,13 +1507,7 @@ export default function WhatsAppSimulator() {
           </div>
 
           <div className="flex gap-2">
-            <button 
-              onClick={handleReset}
-              title="Resetar Conexão / Novo QR Code"
-              className="p-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-xl transition-all"
-            >
-              <RefreshCw size={14} />
-            </button>
+            {/* Removido Resetar Conexão por solicitação do usuário */}
             <button 
               onClick={handleBulkCleanupInteracted}
               title="Limpeza em Massa (Remover contatos sem interação)"
@@ -1536,13 +1522,7 @@ export default function WhatsAppSimulator() {
             >
               <Trash2 size={14} />
             </button>
-            <button 
-              onClick={handleDisconnect}
-              title="Encerrar Sessão / Desconectar"
-              className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-1.5 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border border-red-100"
-            >
-              Desconectar WhatsApp
-            </button>
+            {/* Removido Desconectar FRONT ZAP por solicitação do usuário */}
           </div>
 
           {/* Funnel & Channel Filter Row */}
@@ -1566,7 +1546,7 @@ export default function WhatsAppSimulator() {
               <option value="Google Ads">Google Ads</option>
               <option value="Facebook">Facebook</option>
               <option value="TikTok">TikTok</option>
-              <option value="whatsapp_real">WhatsApp</option>
+              <option value="whatsapp_real">FRONT ZAP</option>
             </select>
           </div>
         </div>
@@ -1623,7 +1603,7 @@ export default function WhatsAppSimulator() {
                             (autoSource === 'whatsapp_real' || autoSource === 'WhatsApp') ? 'bg-[#25D366]' :
                             'bg-neutral-600'
                           }`}>
-                            {autoSource === 'whatsapp_real' ? 'WhatsApp' : autoSource}
+                            {autoSource === 'whatsapp_real' ? 'FRONT ZAP' : autoSource}
                           </span>
 
                           {/* Funnel Stage Tag */}
@@ -1842,7 +1822,7 @@ export default function WhatsAppSimulator() {
                               { id: 'Google Ads', label: 'Google Ads', color: 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100/50', activeColor: 'bg-[#4285F4] text-white border-transparent' },
                               { id: 'Facebook', label: 'Facebook', color: 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100/50', activeColor: 'bg-[#1877F2] text-white border-transparent' },
                               { id: 'TikTok', label: 'TikTok', color: 'bg-neutral-100 text-neutral-800 border-neutral-200 hover:bg-neutral-200/50', activeColor: 'bg-black text-white border-transparent' },
-                              { id: 'whatsapp_real', label: 'WhatsApp', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/50', activeColor: 'bg-[#25D366] text-white border-transparent' },
+                              { id: 'whatsapp_real', label: 'FRONT ZAP', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/50', activeColor: 'bg-[#25D366] text-white border-transparent' },
                             ].map((channel) => {
                               const currentChannel = matchedPatient ? getAutoSource(matchedPatient) : getAutoChatSource(activeChatId || '');
                               const isActive = (currentChannel === channel.id) || (channel.id === 'whatsapp_real' && currentChannel === 'WhatsApp');
@@ -2130,7 +2110,7 @@ export default function WhatsAppSimulator() {
               </div>
               <div className="space-y-3">
                 <h2 className="text-xl font-bold text-neutral-700">
-                  {connectionStatus === 'connected' ? 'Atendimento Digital IA Ativo' : 'Gerenciamento WhatsApp Business'}
+                  {connectionStatus === 'connected' ? 'Atendimento Digital IA Ativo' : 'Gerenciamento FRONT ZAP'}
                 </h2>
                 <p className="text-xs text-neutral-500 leading-relaxed max-w-[280px]">
                   {connectionStatus === 'connected' 
