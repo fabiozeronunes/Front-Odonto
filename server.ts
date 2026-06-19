@@ -233,8 +233,8 @@ async function connectToWhatsApp() {
       logger: pino({ level: 'info' }), // Increased log level for debug
       browser: Browsers.macOS('Chrome'), // Consistent browser string
       syncFullHistory: false,
-      connectTimeoutMs: 60000, // Increase timeout for slower networks
-      defaultQueryTimeoutMs: 60000,
+      connectTimeoutMs: 120000, // Increase timeout for slower networks
+      defaultQueryTimeoutMs: 120000,
       keepAliveIntervalMs: 30000,
       generateHighQualityLinkPreview: false,
       markOnlineOnConnect: true

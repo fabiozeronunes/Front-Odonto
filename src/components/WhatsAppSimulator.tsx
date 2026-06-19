@@ -503,9 +503,13 @@ export default function WhatsAppSimulator() {
         });
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const data = await res.json();
+        console.log("Polling /api/wa-status response:", data);
         if (data.status) {
           setConnectionStatus(data.status);
-          if (data.qr) setQrCode(data.qr);
+          if (data.qr) {
+            console.log("QR Code received in polling. Length:", data.qr.length);
+            setQrCode(data.qr);
+          }
           if (data.user) setConnectedUser(data.user);
         }
       } catch (e) {
