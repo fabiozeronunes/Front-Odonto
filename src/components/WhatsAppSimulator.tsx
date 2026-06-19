@@ -238,17 +238,24 @@ export default function WhatsAppSimulator() {
   const socketRef = useRef<WebSocket | null>(null);
   const [showCRMDetails, setShowCRMDetails] = useState(() => window.innerWidth >= 1280);
 
-  // Auto-connect if disconnected on mount
+  // Auto-connect if disconnected on mount - REMOVIDO por solicitação do usuário
+  // O QR Code deve aparecer apenas quando o botão for clicado e expirar em 10s.
   useEffect(() => {
-    if (connectionStatus === 'disconnected') {
-      console.log("Triggering auto-connect on mount...");
-      handleConnect();
-    }
-  }, []); // Run only once
+    // handleConnect() não deve ser chamado aqui automaticamente
+  }, []);
 
   // Sync connection status from Firestore
   useEffect(() => {
     if (!currentUser) return;
+
+    // Força desconexão se o componente for montado e estivermos no estado anterior - solicitado pelo usuário
+    const forceReset = async () => {
+      try {
+        await fetch('/api/wa-disconnect', { method: 'POST' });
+        console.log("[FRONT ZAP] Desconexão forçada na montagem.");
+      } catch (e) {}
+    };
+    forceReset();
 
     const statusRef = doc(db, 'whatsapp_status', currentUser.uid);
     const unsubStatus = onSnapshot(statusRef, (snapshot) => {
@@ -256,6 +263,12 @@ export default function WhatsAppSimulator() {
         const data = snapshot.data();
         if (data.isQrActive !== undefined) setIsQrActive(data.isQrActive);
         
+        // Sincroniza countdown baseado na expiração do servidor
+        if (data.qrExpiresAt && data.status === 'qr') {
+          const timeLeft = Math.max(0, Math.ceil((data.qrExpiresAt - Date.now()) / 1000));
+          setQrCountdown(timeLeft);
+        }
+
         // If isQrActive is true, we accept the status and QR from DB
         if (data.isQrActive) {
           if (data.status) setConnectionStatus(data.status);
@@ -265,11 +278,9 @@ export default function WhatsAppSimulator() {
           if (data.status === 'connected') {
             setConnectionStatus('connected');
           } else {
-            // Visual check: if BA is connecting but we didn't request visibility, stay in disconnected
-            if (data.status !== 'connected') {
-              setConnectionStatus('disconnected');
-              setQrCode(null);
-            }
+            // Se o intento não está ativo e não está conectado, garantimos estado desconectado
+            setConnectionStatus('disconnected');
+            setQrCode(null);
           }
         }
         if (data.user) setConnectedUser(data.user);
@@ -512,10 +523,10 @@ export default function WhatsAppSimulator() {
   }, []);
 
   // Adiciona cronômetro para o QR Code (expira em 10 segundos conforme solicitado)
+  // Agora sincronizado com o servidor via Firestore
   useEffect(() => {
     let timer: any;
     if (qrCode && isQrActive) {
-      setQrCountdown(10);
       timer = setInterval(() => {
         setQrCountdown(prev => {
           if (prev !== null && prev <= 1) {
@@ -1183,19 +1194,24 @@ export default function WhatsAppSimulator() {
   };
 
   const handleConnect = async () => {
-    if (currentUser) {
-      setDoc(doc(db, 'whatsapp_status', currentUser.uid), {
-        isQrActive: true,
-        updatedAt: serverTimestamp()
-      }, { merge: true }).catch(err => console.error("Error setting WA intent:", err));
-    }
+    console.log("[FRONT ZAP] Iniciando conexão manual...");
     setIsQrActive(true);
     setConnectionStatus('connecting');
     setQrCode(null);
+    
+    if (currentUser) {
+      setDoc(doc(db, 'whatsapp_status', currentUser.uid), {
+        isQrActive: true,
+        status: 'connecting',
+        updatedAt: serverTimestamp()
+      }, { merge: true }).catch(err => console.error("Error setting WA intent:", err));
+    }
+    
     try {
       await fetch('/api/wa-connect', { method: 'POST' });
     } catch (e) {
       console.error('Failed to initiate connection:', e);
+      setConnectionStatus('disconnected');
     }
   };
 
@@ -1236,108 +1252,6 @@ export default function WhatsAppSimulator() {
   const handleDeleteChat = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setChatToDelete(id);
-  };
-
-  const handleClearAllChats = async () => {
-    if (!currentUser || !window.confirm("Tem certeza que deseja apagar TODOS os contatos e mensagens sincronizados? Esta ação não pode ser desfeita.")) return;
-    
-    setLoading(true);
-    try {
-      // 1. Buscar todos os chats do usuário
-      const chatsRef = collection(db, 'whatsapp_chats');
-      const qChats = query(chatsRef, where('ownerId', '==', currentUser.uid));
-      const chatDocs = await getDocs(qChats);
-      
-      // 2. Buscar todas as mensagens do usuário
-      const msgsRef = collection(db, 'whatsapp_messages');
-      const qMsgs = query(msgsRef, where('ownerId', '==', currentUser.uid));
-      const msgDocs = await getDocs(qMsgs);
-
-      // 3. Buscar chats escondidos/deletados
-      const deletedRef = collection(db, 'deleted_chats');
-      const qDeleted = query(deletedRef, where('ownerId', '==', currentUser.uid));
-      const deletedDocs = await getDocs(qDeleted);
-
-      // 4. Deletar chats em lote
-      const deletePromises = [
-        ...chatDocs.docs.map(d => deleteDoc(d.ref)),
-        ...msgDocs.docs.map(d => deleteDoc(d.ref)),
-        ...deletedDocs.docs.map(d => deleteDoc(d.ref))
-      ];
-      
-      await Promise.all(deletePromises);
-
-      // 5. Limpar estado local
-      setChats({});
-      setDeletedChatIds([]);
-      setActiveChatId(null);
-      localStorage.removeItem('whatsapp_simulator_chats');
-      localStorage.removeItem('wa_deleted_chats');
-
-      // 6. Trigger global sync
-      const syncRef = doc(db, 'system', `sync_${currentUser.uid}`);
-      await setDoc(syncRef, { 
-        timestamp: Date.now().toString(),
-        ownerId: currentUser.uid,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      alert("Histórico de FRONT ZAP limpo com sucesso.");
-    } catch (err) {
-      console.error("Erro ao limpar histórico:", err);
-      alert("Erro ao apagar dados. Tente novamente.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBulkCleanupInteracted = async () => {
-    if (!currentUser || !window.confirm("Deseja remover todos os contatos importados que não tiveram interação com o sistema?")) return;
-    
-    setLoading(true);
-    try {
-      // 1. Buscar contatos na coleção whatsapp_contacts (ou chats) com interacted false
-      const chatsRef = collection(db, 'whatsapp_chats');
-      const q = query(chatsRef, where('ownerId', '==', currentUser.uid), where('interacted', '==', false));
-      const snapshot = await getDocs(q);
-      
-      // 2. Também buscar explicitamente na whatsapp_contacts se existir
-      const contactsRef = collection(db, 'whatsapp_contacts');
-      const q2 = query(contactsRef, where('ownerId', '==', currentUser.uid), where('interacted', '==', false));
-      const snapshot2 = await getDocs(q2);
-
-      const deletePromises = [
-        ...snapshot.docs.map(d => deleteDoc(d.ref)),
-        ...snapshot2.docs.map(d => deleteDoc(d.ref))
-      ];
-
-      await Promise.all(deletePromises);
-
-      // 3. Atualizar localmente
-      setChats(prev => {
-        const next = { ...prev };
-        snapshot.docs.forEach(d => {
-          const jid = d.data().chatJid;
-          if (jid) delete next[jid];
-        });
-        return next;
-      });
-
-      // 4. Trigger global sync
-      const syncRef = doc(db, 'system', `sync_${currentUser.uid}`);
-      await setDoc(syncRef, { 
-        timestamp: Date.now().toString(),
-        ownerId: currentUser.uid,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      alert(`${deletePromises.length} contatos sem interação foram removidos.`);
-    } catch (err) {
-      console.error("Erro na limpeza em massa:", err);
-      alert("Falha ao realizar limpeza. Verifique as permissões.");
-    } finally {
-      setLoading(false);
-    }
   };
 
   const confirmDeleteChat = async () => {
@@ -1470,44 +1384,65 @@ export default function WhatsAppSimulator() {
       <div className={`${activeChatId ? 'hidden md:flex' : 'flex w-full md:flex'} border-r border-neutral-200 flex-col bg-[#f0f2f5] md:w-[320px] md:min-w-[320px] md:max-w-[320px] shrink-0`}>
         
         {/* Sidebar Header */}
-        <div className="h-16 px-4 flex items-center justify-between bg-[#f0f2f5] shrink-0 border-b border-neutral-300/40">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#128C7E] overflow-hidden flex items-center justify-center border border-white shadow-sm shrink-0">
-              <span className="text-white font-bold text-sm">
-                {connectedUser ? (connectedUser.name?.[0]?.toUpperCase() || 'O') : 'A'}
-              </span>
-            </div>
-            {connectedUser && (
-              <div className="min-w-0">
-                <span className="text-xs font-black text-neutral-800 uppercase tracking-tighter truncate block">
-                  {connectedUser.name || 'Conectado'}
-                </span>
-                <span className="text-[8px] font-bold text-green-600 uppercase tracking-widest block flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping" />
-                  Ativo no FRONT ZAP
+        <div className="h-20 px-4 flex flex-col justify-center bg-[#f0f2f5] shrink-0 border-b border-neutral-300/40">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#128C7E] overflow-hidden flex items-center justify-center border border-white shadow-sm shrink-0">
+                <span className="text-white font-bold text-sm">
+                  {connectedUser ? (connectedUser.name?.[0]?.toUpperCase() || 'O') : 'A'}
                 </span>
               </div>
-            )}
-          </div>
-          <div className="flex gap-2 text-neutral-600 items-center">
-            <a 
-              href={`${window.location.origin}?tab=whatsapp`} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              title="Abrir Painel de Atendimento em Nova Aba (Desktop)" 
-              className="flex items-center gap-1.5 bg-[#128C7E]/10 hover:bg-[#128C7E] hover:text-white text-neutral-700 text-[10px] font-extrabold uppercase tracking-widest py-1.5 px-3 rounded-xl transition-all border border-neutral-300/40 shadow-xs"
-              id="btn-desktop-panel"
-            >
-              <ExternalLink size={12} className="stroke-[2.5]" />
-              <span>Painel</span>
-            </a>
-            
-            {/* Removido botões Sair/Cancelar por solicitação do usuário */}
-            
-            
-            <button className="hover:text-[#128C7E] p-1 rounded-lg hover:bg-white/50">
-              <MoreVertical size={16} />
-            </button>
+              <div className="min-w-0">
+                {connectionStatus === 'connected' ? (
+                  <>
+                    <span className="text-xs font-black text-neutral-800 uppercase tracking-tighter truncate block">
+                      {connectedUser?.name || 'Agente Ativo'}
+                    </span>
+                    <span className="text-[8px] font-bold text-green-600 uppercase tracking-widest block flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping" />
+                      Sincronizado
+                    </span>
+                  </>
+                ) : connectionStatus === 'qr' ? (
+                  <>
+                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-tighter block">
+                      Aguardando QR Code
+                    </span>
+                    <span className="text-[8px] font-bold text-amber-500 uppercase tracking-widest block">
+                      {qrCountdown !== null ? `Expira em ${qrCountdown}s` : 'Gerando...'}
+                    </span>
+                  </>
+                ) : connectionStatus === 'connecting' ? (
+                  <span className="text-[9px] font-black text-blue-600 uppercase tracking-tighter animate-pulse block">
+                    Conectando...
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-[9px] font-black text-neutral-500 uppercase tracking-tighter block">
+                      FRONT ZAP
+                    </span>
+                    <span className="text-[8px] font-bold text-red-500 uppercase tracking-widest block">
+                      Desconectado
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2 text-neutral-600 items-center">
+              <a 
+                href={`${window.location.origin}?tab=whatsapp`} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                title="Abrir Painel de Atendimento em Nova Aba (Desktop)" 
+                className="flex items-center justify-center w-8 h-8 bg-white/80 hover:bg-[#128C7E] hover:text-white text-neutral-700 rounded-full transition-all border border-neutral-300/40 shadow-xs"
+                id="btn-desktop-panel"
+              >
+                <ExternalLink size={14} className="stroke-[2.5]" />
+              </a>
+              <button className="hover:text-[#128C7E] p-1 rounded-lg hover:bg-white/50">
+                <MoreVertical size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1600,22 +1535,7 @@ export default function WhatsAppSimulator() {
           </div>
 
           <div className="flex gap-2">
-            {/* Removido Resetar Conexão por solicitação do usuário */}
-            <button 
-              onClick={handleBulkCleanupInteracted}
-              title="Limpeza em Massa (Remover contatos sem interação)"
-              className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-xl transition-all border border-amber-100"
-            >
-              <RefreshCw size={14} className="rotate-180" />
-            </button>
-            <button 
-              onClick={handleClearAllChats}
-              title="Limpar todos os contatos importados"
-              className="p-2 bg-neutral-100 hover:bg-red-100 hover:text-red-600 text-neutral-600 rounded-xl transition-all"
-            >
-              <Trash2 size={14} />
-            </button>
-            {/* Removido Desconectar FRONT ZAP por solicitação do usuário */}
+            {/* Botões de limpeza removidos por solicitação do usuário */}
           </div>
 
           {/* Funnel & Channel Filter Row */}

@@ -69,7 +69,14 @@ const ai = new GoogleGenAI({
 async function getGlobalOwnerInfo() {
   try {
     const clinics = await db.collection('clinics').limit(1).get();
-    if (clinics.empty) return null;
+    if (clinics.empty) {
+      // Fallback: Check if there's any user in patients too as a secondary way to find the tenant
+      const patients = await db.collection('pacientes').limit(1).get();
+      if (!patients.empty) {
+        return { ownerId: patients.docs[0].data().ownerId };
+      }
+      return null;
+    }
     const clinic = clinics.docs[0].data();
     return {
       ownerId: clinic.ownerId,
@@ -95,36 +102,61 @@ let qrActiveIntent = false; // Intent state from DB
 async function syncStatusToFirestore(overrides = {}) {
   try {
     const ownerInfo = await getGlobalOwnerInfo();
-    if (!ownerInfo) return;
+    if (!ownerInfo) {
+      debugLog("Status sync skipped: No owner info found yet.");
+      return;
+    }
 
     const statusRef = db.collection('whatsapp_status').doc(ownerInfo.ownerId);
-    await statusRef.set({
+    const updateData: any = {
       status: connectionStatus,
       qrCode: qrCode,
-      user: sock?.user || null,
       updatedAt: FieldValue.serverTimestamp(),
       isQrActive: qrActiveIntent,
       ...overrides
-    }, { merge: true });
-    debugLog(`Status synced to Firestore: ${connectionStatus}`);
+    };
+    
+    if (sock?.user) updateData.user = sock.user;
+    else if (connectionStatus !== 'connected') updateData.user = null;
+
+    await statusRef.set(updateData, { merge: true });
+    debugLog(`Status synced to Firestore for ${ownerInfo.ownerId}: ${connectionStatus}`);
   } catch (err) {
     console.error("Error syncing WA status to Firestore:", err);
   }
 }
 
-// Watch for intent changes in DB
+// Watch for intent changes in DB with retry logic
+let watchRetryCount = 0;
 async function watchWAIntent() {
   const ownerInfo = await getGlobalOwnerInfo();
-  if (!ownerInfo) return;
+  if (!ownerInfo) {
+    if (watchRetryCount < 10) {
+      watchRetryCount++;
+      debugLog(`Retrying watchWAIntent in 2s... (Attempt ${watchRetryCount})`);
+      setTimeout(watchWAIntent, 2000);
+    }
+    return;
+  }
 
+  debugLog(`Starting Firestore watch on whatsapp_status for ${ownerInfo.ownerId}`);
   db.collection('whatsapp_status').doc(ownerInfo.ownerId).onSnapshot(doc => {
     if (doc.exists) {
       const data = doc.data();
+      debugLog(`Firestore Watch Update for ${ownerInfo.ownerId}: isQrActive=${data?.isQrActive}, status=${data?.status}`);
       if (data && data.isQrActive !== undefined) {
+        // Se mudou de false para true via DB (remoto), iniciamos conexão
+        if (data.isQrActive && !qrActiveIntent && connectionStatus === 'disconnected') {
+          debugLog("QR Active Intent detected from DB remote change. Connecting...");
+          qrActiveIntent = true;
+          connectToWhatsApp();
+        }
         qrActiveIntent = data.isQrActive;
-        debugLog(`QR Active Intent updated from DB: ${qrActiveIntent}`);
       }
     }
+  }, err => {
+    console.error("Firestore Watch Error:", err);
+    setTimeout(watchWAIntent, 5000);
   });
 }
 
@@ -311,8 +343,31 @@ async function connectToWhatsApp() {
           connectionStatus = 'qr';
           isConnecting = false;
           broadcast({ type: 'status', status: 'qr', qr: qrCode });
-          syncStatusToFirestore();
-          console.log("QR Code broadcasted to clients");
+          
+          const expiresAt = Date.now() + 10000;
+          syncStatusToFirestore({ qrExpiresAt: expiresAt });
+          
+          // Server-side expiration timer for the QR
+          setTimeout(async () => {
+             if (connectionStatus === 'qr') {
+                debugLog("QR Code expired on server-side (10s limit)");
+                qrCode = null;
+                qrActiveIntent = false;
+                connectionStatus = 'disconnected';
+                broadcast({ type: 'status', status: 'disconnected', qr: null });
+                syncStatusToFirestore({ qrCode: null, isQrActive: false, qrExpiresAt: null });
+                
+                // Force logout in baileys to stop QR refs
+                try {
+                   if (sock) {
+                      await sock.logout().catch(() => {});
+                      sock = null;
+                   }
+                } catch(e) {}
+             }
+          }, 10000);
+
+          console.log("QR Code broadcasted to clients with 10s expiration");
         } catch (e) {
           debugLog("QR Code generation error: " + (e as any).message);
           isConnecting = false;
@@ -800,6 +855,77 @@ app.post("/api/wa-disconnect", async (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+app.post("/api/wa-clear-all", async (req, res) => {
+  debugLog("FULL CLEAR requested via /api/wa-clear-all");
+  forceDisconnect = true;
+  lastHistory = null;
+  qrCode = null;
+  connectionStatus = 'disconnected';
+  isConnecting = false;
+  qrActiveIntent = false;
+
+  // 1. Terminate & Logout socket
+  if (sock) {
+    try {
+      if (sock.ws) sock.ws.terminate();
+      await sock.logout().catch(() => {});
+      sock.end(undefined);
+    } catch(e) {}
+  }
+  sock = null;
+
+  // 2. Clear Auth Directory
+  try {
+    if (fs.existsSync('/tmp/wa_auth')) {
+      fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
+      debugLog("/tmp/wa_auth deleted in FULL CLEAR");
+    }
+  } catch(e) {}
+
+  // 3. Clear DB Collections for this owner
+  try {
+    const ownerInfo = await getGlobalOwnerInfo();
+    if (ownerInfo) {
+      const ownerId = ownerInfo.ownerId;
+      
+      // Delete messages
+      const msgs = await db.collection('whatsapp_messages').where('ownerId', '==', ownerId).get();
+      const msgBatch = db.batch();
+      msgs.docs.forEach(doc => msgBatch.delete(doc.ref));
+      await msgBatch.commit();
+
+      // Delete chats
+      const chats = await db.collection('whatsapp_chats').where('ownerId', '==', ownerId).get();
+      const chatBatch = db.batch();
+      chats.docs.forEach(doc => chatBatch.delete(doc.ref));
+      await chatBatch.commit();
+
+      // Delete deleted_chats index
+      const del = await db.collection('deleted_chats').where('ownerId', '==', ownerId).get();
+      const delBatch = db.batch();
+      del.docs.forEach(doc => delBatch.delete(doc.ref));
+      await delBatch.commit();
+
+      // Reset WA Status
+      await db.collection('whatsapp_status').doc(ownerId).set({
+        status: 'disconnected',
+        qrCode: null,
+        user: null,
+        isQrActive: false,
+        qrExpiresAt: null,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      debugLog(`DB Collections cleared for owner ${ownerId}`);
+    }
+  } catch(err) {
+    console.error("Error clearing DB in FULL CLEAR:", err);
+  }
+
+  broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
+  res.json({ success: true, message: "Todos os dados foram removidos com sucesso." });
 });
 
 app.post("/api/wa-reset", (req, res) => {
