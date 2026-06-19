@@ -406,18 +406,25 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   };
 
   const handleDeleteLead = async (e: React.MouseEvent, patientId: string) => {
+    console.log("handleDeleteLead called for ID:", patientId);
     e.preventDefault();
     e.stopPropagation();
     
     if (!patientId) return;
 
-    if (!window.confirm("Deseja realmente excluir este lead permanentemente?")) return;
+    if (!window.confirm("Deseja realmente excluir este lead permanentemente?")) {
+        console.log("Deletion cancelled by user.");
+        return;
+    }
     
+    console.log("Deletion confirmed, proceeding for ID:", patientId);
     // Optimistic local update
     setPatients(prev => prev.filter(p => p?.id !== patientId));
 
     try {
+      console.log("Attempting to delete document from Firestore");
       await deleteDoc(doc(db, 'pacientes', patientId));
+      console.log("Document deleted successfully");
     } catch (error) {
       console.error("Error deleting lead:", error);
       alert("Erro ao excluir do banco de dados. Tente novamente.");
@@ -686,7 +693,10 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                         {patient.lastContactAt ? 'Ativo' : 'Novo'}
                       </span>
                       <button 
-                        onClick={(e) => handleDeleteLead(e, patient.id)}
+                        onClick={(e) => {
+                          console.log("Delete button clicked, patientId:", patient.id);
+                          handleDeleteLead(e, patient.id);
+                        }}
                         onMouseDown={(e) => e.stopPropagation()}
                         draggable="false"
                         onDragStart={(e) => e.stopPropagation()}

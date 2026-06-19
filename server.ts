@@ -161,12 +161,12 @@ const broadcast = (data: any) => {
 };
 
 const debugLog = (msg: string) => {
-  try { fs.appendFileSync("wa-debug.log", msg + "\n"); } catch(e) {}
+  try { fs.appendFileSync("/tmp/wa-debug.log", msg + "\n"); } catch(e) {}
 };
 
 function hasSavedSession() {
   try {
-    return fs.existsSync(path.join('wa_auth', 'creds.json'));
+    return fs.existsSync(path.join('/tmp/wa_auth', 'creds.json'));
   } catch (e) {
     return false;
   }
@@ -203,12 +203,12 @@ async function connectToWhatsApp() {
   }
 
   try {
-    // Ensure wa_auth exists and is writable
-    if (!fs.existsSync('wa_auth')) {
-      fs.mkdirSync('wa_auth', { recursive: true });
+    // Ensure /tmp/wa_auth exists and is writable
+    if (!fs.existsSync('/tmp/wa_auth')) {
+      fs.mkdirSync('/tmp/wa_auth', { recursive: true });
     }
     
-    const { state, saveCreds } = await useMultiFileAuthState('wa_auth');
+    const { state, saveCreds } = await useMultiFileAuthState('/tmp/wa_auth');
     
     // Default version to use if fetch fails or hangs
     let version = [2, 3000, 1015901307] as [number, number, number];
@@ -296,8 +296,8 @@ async function connectToWhatsApp() {
           connectionStatus = 'disconnected';
           broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
           try {
-            if (fs.existsSync('wa_auth')) {
-              fs.rmSync('wa_auth', { recursive: true, force: true });
+            if (fs.existsSync('/tmp/wa_auth')) {
+              fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
             }
           } catch(e) {}
         }
@@ -691,12 +691,12 @@ app.post("/api/wa-disconnect", async (req, res) => {
 
   const cleanup = () => {
     try {
-      if (fs.existsSync('wa_auth')) {
-        fs.rmSync('wa_auth', { recursive: true, force: true });
-        debugLog("wa_auth deleted successfully on explicit disconnect");
+      if (fs.existsSync('/tmp/wa_auth')) {
+        fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
+        debugLog("/tmp/wa_auth deleted successfully on explicit disconnect");
       }
     } catch(e: any) {
-      debugLog("Failed to delete wa_auth on explicit disconnect: " + e.message);
+      debugLog("Failed to delete /tmp/wa_auth on explicit disconnect: " + e.message);
     }
     sock = null;
     broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
@@ -739,12 +739,12 @@ app.post("/api/wa-reset", (req, res) => {
 
   const cleanupAndReconnect = () => {
     try {
-      if (fs.existsSync('wa_auth')) {
-        fs.rmSync('wa_auth', { recursive: true, force: true });
-        debugLog("wa_auth deleted successfully on explicit reset");
+      if (fs.existsSync('/tmp/wa_auth')) {
+        fs.rmSync('/tmp/wa_auth', { recursive: true, force: true });
+        debugLog("/tmp/wa_auth deleted successfully on explicit reset");
       }
     } catch(e: any) {
-      debugLog("Failed to delete wa_auth on explicit reset: " + e.message);
+      debugLog("Failed to delete /tmp/wa_auth on explicit reset: " + e.message);
     }
     sock = null;
     broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
@@ -768,7 +768,7 @@ app.post("/api/wa-reset", (req, res) => {
     
     // Safety fallback: force clear and reconnect after 2.5s if not executed yet
     setTimeout(() => {
-      if (sock || fs.existsSync('wa_auth')) {
+      if (sock || fs.existsSync('/tmp/wa_auth')) {
         cleanupAndReconnect();
       }
     }, 2500);
