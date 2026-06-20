@@ -5,12 +5,30 @@ import { Trash2, Edit2, User, Search, MessageCircle, FileText } from 'lucide-rea
 import PatientForm from './PatientForm';
 import { getPatientId } from '../lib/patient-utils';
 
+const formatCadastroDate = (isoString?: string) => {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (e) {
+    return '';
+  }
+};
+
 export default function PatientManager() {
   const [patients, setPatients] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingPatient, setEditingPatient] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [dentists, setDentists] = useState<any[]>([]);
+  const [patientToDelete, setPatientToDelete] = useState<any | null>(null);
 
   useEffect(() => {
     const patientId = localStorage.getItem('selectedPatient');
@@ -52,12 +70,6 @@ export default function PatientManager() {
     (p.nome || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
     (p.cpf || '').includes(searchQuery || '')
   );
-
-  const handleDelete = async (id: string) => {
-    if (confirm('Tem certeza que deseja excluir?')) {
-      await deleteDoc(doc(db, 'pacientes', id));
-    }
-  };
 
   const openForm = (patient: any = null) => {
     setEditingPatient(patient);
@@ -113,7 +125,7 @@ export default function PatientManager() {
                   <div className="min-w-0">
                     <h3 className="font-bold text-base sm:text-lg text-neutral-800 truncate" title={p.nome}>
                       {p.nome} <span className="text-[10px] text-neutral-400 font-mono ml-2 italic">
-                        ID: {getPatientId(p)}
+                        ID: {getPatientId(p)} {(p.createdAt || p.created_at) && `| Cadastrado em: ${formatCadastroDate(p.createdAt || p.created_at)}`}
                       </span>
                     </h3>
                     <div className="text-neutral-500 text-[11px] sm:text-xs flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
@@ -148,13 +160,50 @@ export default function PatientManager() {
                 </button>
                 <div className="flex gap-1.5 w-full sm:w-auto justify-end">
                   <button onClick={() => openForm(p)} className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:p-2 text-neutral-600 hover:text-blue-600 hover:bg-blue-50/50 rounded-xl transition-all border border-neutral-100 sm:border-0 text-xs sm:text-sm font-bold sm:font-normal" title="Editar"><Edit2 size={16} /><span className="sm:hidden">Editar</span></button>
-                  <button onClick={() => handleDelete(p.id)} className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:p-2 text-neutral-600 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all border border-neutral-100 sm:border-0 text-xs sm:text-sm font-bold sm:font-normal" title="Excluir"><Trash2 size={16} /><span className="sm:hidden">Excluir</span></button>
+                  <button onClick={() => setPatientToDelete(p)} className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:p-2 text-neutral-600 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all border border-neutral-100 sm:border-0 text-xs sm:text-sm font-bold sm:font-normal" title="Excluir"><Trash2 size={16} /><span className="sm:hidden">Excluir</span></button>
                 </div>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Modal de Confirmação de Exclusão */}
+      {patientToDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs animate-fade-in" onClick={() => setPatientToDelete(null)} />
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-neutral-200 shadow-xl relative z-10 space-y-4 animate-scale-in">
+            <h3 className="text-lg font-bold text-neutral-800">Confirmar Exclusão</h3>
+            <p className="text-neutral-600 text-sm leading-relaxed">
+              Tem certeza que deseja excluir o paciente <strong className="text-neutral-900 font-semibold">{patientToDelete.nome}</strong>? Esta ação é irreversível e apagará definitivamente o prontuário e todos os dados associados.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setPatientToDelete(null)}
+                className="px-4 py-2 border border-neutral-200 rounded-xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 active:scale-95 transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await deleteDoc(doc(db, 'pacientes', patientToDelete.id));
+                  } catch (err) {
+                    console.error("Erro ao deletar paciente:", err);
+                  } finally {
+                    setPatientToDelete(null);
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold active:scale-95 transition-all cursor-pointer"
+              >
+                Excluir Paciente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

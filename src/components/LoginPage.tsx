@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Stethoscope, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { doc, setDoc, getDoc } from '../lib/supabaseAdapter';
 import { 
+  auth, 
+  db, 
+  signInWithGoogle,
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   updateProfile,
   sendPasswordResetEmail,
   signInAnonymously
-} from 'firebase/auth';
-import { doc, setDoc, getDoc } from '../lib/supabaseAdapter';
-import { auth, db, signInWithGoogle } from '../lib/firebase';
+} from '../lib/firebase';
 
 interface Props {
-  onLogin: () => void;
+  onLogin: (initialTab?: string) => void;
   onBack: () => void;
 }
 
@@ -74,14 +76,7 @@ export default function LoginPage({ onLogin, onBack }: Props) {
   const [formData, setFormData] = useState({
     nome: '', 
     email: '', 
-    password: '', 
-    cpf: '', 
-    whatsapp: '', 
-    dataNascimento: '',
-    endereco: '', 
-    bairro: '', 
-    cidade: '', 
-    estado: ''
+    password: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -102,12 +97,6 @@ export default function LoginPage({ onLogin, onBack }: Props) {
         return 'Este endereço de email já está em uso por outra conta.';
       case 'auth/weak-password':
         return 'A senha deve conter pelo menos 6 caracteres.';
-      case 'auth/popup-blocked':
-        return 'A janela pop-up de login foi bloqueada pelo navegador. Ative as janelas pop-up neste site para entrar com o Google.';
-      case 'auth/popup-closed-by-user':
-        return 'O login com o Google foi cancelado, pois a janela de autenticação foi fechada.';
-      case 'auth/unauthorized-domain':
-        return `Este domínio (${window.location.hostname}) não está autorizado no seu console do Firebase para realizar login com o Google. Para corrigir: 1. Acesse o Console do Firebase; 2. Vá em Authentication > Settings > Authorized domains (Domínios Autorizados); 3. Adicione "${window.location.hostname}" na lista de domínios autorizados.`;
       default:
         return 'Ocorreu um erro ao processar. Tente novamente.';
     }
@@ -141,16 +130,9 @@ export default function LoginPage({ onLogin, onBack }: Props) {
           await robustSetDoc(userDocRef, {
             nome: loginEmail.split('@')[0],
             email: loginEmail,
-            cpf: '',
-            whatsapp: '',
-            dataNascimento: '',
-            endereco: '',
-            bairro: '',
-            cidade: '',
-            estado: '',
             createdAt: new Date().toISOString()
           });
-          onLogin();
+          onLogin('user_registration');
           return;
         } catch (regErr: any) {
           console.error("[Auth Fallback] Auto-registration failed, attempting Sandbox local login fallback...", regErr);
@@ -177,21 +159,19 @@ export default function LoginPage({ onLogin, onBack }: Props) {
             await setDoc(userDocRef, {
               nome: loginEmail ? loginEmail.split('@')[0] : 'Dentista Parceiro',
               email: loginEmail || 'fabiozeronunes@gmail.com',
-              cpf: '',
-              whatsapp: '',
-              dataNascimento: '',
-              endereco: '',
-              bairro: '',
-              cidade: '',
-              estado: '',
               createdAt: new Date().toISOString()
             });
+            onLogin('user_registration');
+          } else {
+            onLogin('dashboard');
           }
         } catch (fErr) {
           console.warn("[Auth Sandbox] Omitido seed do Firestore para Email fallback:", fErr);
+          onLogin('dashboard');
         }
+      } else {
+        onLogin('dashboard');
       }
-      onLogin();
     } finally {
       setLoading(false);
       console.log("[Auth Trace] handleEmailLogin finally block reached (loading set to false).");
@@ -232,22 +212,15 @@ export default function LoginPage({ onLogin, onBack }: Props) {
         displayName: formData.nome
       });
 
-      // 3. Save additional user profile details in Firestore (secure under /users/{userId})
+      // 3. Save minimum user details in Firestore
       await robustSetDoc(doc(db, 'users', user.uid), {
         nome: formData.nome || '',
         email: formData.email || '',
-        cpf: formData.cpf || '',
-        whatsapp: formData.whatsapp || '',
-        dataNascimento: formData.dataNascimento || '',
-        endereco: formData.endereco || '',
-        bairro: formData.bairro || '',
-        cidade: formData.cidade || '',
-        estado: formData.estado || '',
         createdAt: new Date().toISOString()
       });
 
       sessionStorage.removeItem('auth_in_progress');
-      onLogin();
+      onLogin('user_registration');
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
         console.log("Email already in use. Checking if credentials match to complete registration fallback...");
@@ -263,18 +236,11 @@ export default function LoginPage({ onLogin, onBack }: Props) {
           await robustSetDoc(userDocRef, {
             nome: formData.nome || '',
             email: formData.email || '',
-            cpf: formData.cpf || '',
-            whatsapp: formData.whatsapp || '',
-            dataNascimento: formData.dataNascimento || '',
-            endereco: formData.endereco || '',
-            bairro: formData.bairro || '',
-            cidade: formData.cidade || '',
-            estado: formData.estado || '',
             createdAt: new Date().toISOString()
           });
 
           sessionStorage.removeItem('auth_in_progress');
-          onLogin();
+          onLogin('user_registration');
           return;
         } catch (signInErr) {
           console.error("Sign-in fallback for already registered email failed:", signInErr);
@@ -315,19 +281,14 @@ export default function LoginPage({ onLogin, onBack }: Props) {
             await robustSetDoc(userDocRef, {
               nome: user.displayName || '',
               email: user.email || '',
-              cpf: '',
-              whatsapp: '',
-              dataNascimento: '',
-              endereco: '',
-              bairro: '',
-              cidade: '',
-              estado: '',
               createdAt: new Date().toISOString()
             });
+            onLogin('user_registration');
+          } else {
+            onLogin('dashboard');
           }
         }
         sessionStorage.removeItem('auth_in_progress');
-        onLogin();
       })
       .catch(async (err: any) => {
         console.warn("[Auth Fallback] Google Auth failed/blocked, activating Google Demo Login Sandbox mode to bypass environment limits:", err);
@@ -351,21 +312,19 @@ export default function LoginPage({ onLogin, onBack }: Props) {
               await setDoc(userDocRef, {
                 nome: 'Fábio Zero Nunes (Conta Google)',
                 email: 'fabiozeronunes@gmail.com',
-                cpf: '',
-                whatsapp: '',
-                dataNascimento: '',
-                endereco: '',
-                bairro: '',
-                cidade: '',
-                estado: '',
                 createdAt: new Date().toISOString()
               });
+              onLogin('user_registration');
+            } else {
+              onLogin('dashboard');
             }
           } catch (firestoreErr) {
             console.warn("[Auth Sandbox] Omitido seed para Google Auth Sandbox:", firestoreErr);
+            onLogin('dashboard');
           }
+        } else {
+          onLogin('dashboard');
         }
-        onLogin();
       })
       .finally(() => {
         setLoading(false);
@@ -377,7 +336,7 @@ export default function LoginPage({ onLogin, onBack }: Props) {
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md sm:max-w-xl md:max-w-2xl bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-8 md:p-10 my-4 sm:my-8 shadow-2xl"
+        className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-8 md:p-10 my-4 shadow-2xl"
       >
         <button 
           onClick={onBack} 
@@ -473,135 +432,42 @@ export default function LoginPage({ onLogin, onBack }: Props) {
             </button>
           </form>
         ) : (
-          <form onSubmit={handleRegister} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Nome Completo - FULL WIDTH */}
-            <div className="col-span-1 sm:col-span-2">
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div>
               <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">Nome Completo</label>
               <input 
                 type="text" 
                 placeholder="Insira seu nome completo" 
                 value={formData.nome}
                 onChange={(e) => setFormData({...formData, nome: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
+                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm transition-all" 
                 required 
                 disabled={loading}
               />
             </div>
 
-            {/* Email - FULL WIDTH */}
-            <div className="col-span-1 sm:col-span-2">
+            <div>
               <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">Email</label>
               <input 
                 type="email" 
                 placeholder="seuemail@exemplo.com" 
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
+                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm transition-all" 
                 required 
                 disabled={loading}
               />
             </div>
 
-            {/* Senha */}
-            <div className="col-span-1">
+            <div>
               <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">Senha</label>
               <input 
                 type="password" 
                 placeholder="Min. 6 caracteres" 
                 value={formData.password}
                 onChange={(e) => setFormData({...formData, password: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
+                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm transition-all" 
                 required 
-                disabled={loading}
-              />
-            </div>
-
-            {/* CPF */}
-            <div className="col-span-1">
-              <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">CPF</label>
-              <input 
-                type="text" 
-                placeholder="000.000.000-00" 
-                value={formData.cpf}
-                onChange={(e) => setFormData({...formData, cpf: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
-                disabled={loading}
-              />
-            </div>
-
-            {/* Data de Nascimento */}
-            <div className="col-span-1">
-              <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">Data de Nascimento</label>
-              <input 
-                type="date" 
-                value={formData.dataNascimento}
-                onChange={(e) => setFormData({...formData, dataNascimento: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
-                disabled={loading}
-              />
-            </div>
-
-            {/* WhatsApp - FULL WIDTH */}
-            <div className="col-span-1 sm:col-span-2">
-              <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">WhatsApp</label>
-              <input 
-                type="text" 
-                placeholder="(DD) 99999-9999" 
-                value={formData.whatsapp}
-                onChange={(e) => setFormData({...formData, whatsapp: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
-                disabled={loading}
-              />
-            </div>
-
-            {/* Endereço - FULL WIDTH */}
-            <div className="col-span-1 sm:col-span-2">
-              <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">Endereço</label>
-              <input 
-                type="text" 
-                placeholder="Rua, Número, Complemento" 
-                value={formData.endereco}
-                onChange={(e) => setFormData({...formData, endereco: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
-                disabled={loading}
-              />
-            </div>
-
-            {/* Bairro - FULL WIDTH */}
-            <div className="col-span-1 sm:col-span-2">
-              <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">Bairro</label>
-              <input 
-                type="text" 
-                placeholder="Nome do bairro" 
-                value={formData.bairro}
-                onChange={(e) => setFormData({...formData, bairro: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
-                disabled={loading}
-              />
-            </div>
-
-            {/* Cidade */}
-            <div className="col-span-1">
-              <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">Cidade</label>
-              <input 
-                type="text" 
-                placeholder="Nome da cidade" 
-                value={formData.cidade}
-                onChange={(e) => setFormData({...formData, cidade: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
-                disabled={loading}
-              />
-            </div>
-
-            {/* Estado */}
-            <div className="col-span-1">
-              <label className="text-xs font-bold text-neutral-400 mb-1.5 block pl-1">Estado</label>
-              <input 
-                type="text" 
-                placeholder="UF" 
-                value={formData.estado}
-                onChange={(e) => setFormData({...formData, estado: e.target.value})}
-                className="w-full bg-neutral-800 text-white placeholder-neutral-500 rounded-xl p-3.5 sm:p-4 border border-neutral-700/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-medium text-sm sm:text-base transition-all" 
                 disabled={loading}
               />
             </div>
@@ -609,7 +475,7 @@ export default function LoginPage({ onLogin, onBack }: Props) {
             <button 
               type="submit" 
               disabled={loading}
-              className="col-span-1 sm:col-span-2 w-full bg-blue-600 text-white py-3.5 sm:py-4 px-4 rounded-xl font-bold hover:bg-blue-700 transition-colors mt-4 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-600/10 text-sm sm:text-base"
+              className="w-full bg-blue-600 text-white py-3.5 px-4 rounded-xl font-bold hover:bg-blue-700 transition-colors mt-2 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-600/10 text-sm"
             >
               {loading ? (
                 <>
@@ -626,7 +492,7 @@ export default function LoginPage({ onLogin, onBack }: Props) {
                 setError(null);
               }} 
               disabled={loading}
-              className="col-span-1 sm:col-span-2 w-full text-neutral-400 hover:text-neutral-200 text-xs sm:text-sm mt-2 text-center font-bold block py-1"
+              className="w-full text-neutral-400 hover:text-neutral-200 text-xs mt-2 text-center font-bold block py-1"
             >
               Voltar para o Login
             </button>

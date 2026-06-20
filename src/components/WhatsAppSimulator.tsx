@@ -531,7 +531,15 @@ export default function WhatsAppSimulator() {
         if (!trimmed || trimmed === 'undefined' || trimmed === 'null') {
           return;
         }
-        const data = JSON.parse(trimmed);
+        
+        let data;
+        try {
+          data = JSON.parse(trimmed);
+        } catch (e) {
+          console.warn("Erro ao parsear mensagem WS:", trimmed);
+          return;
+        }
+        
         console.log('WS Message:', data);
 
         if (data.type === 'status') {

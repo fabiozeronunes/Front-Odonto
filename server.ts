@@ -17,27 +17,24 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import pino from "pino";
 import QRCode from "qrcode";
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
-// import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
+import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
-// Initialize Firebase Admin
-let firebaseConfig;
-try {
-  firebaseConfig = JSON.parse(fs.readFileSync("./firebase-applet-config.json", "utf-8"));
-} catch (e) {
-  console.error("Critical: Failed to read firebase-applet-config.json", e);
-  process.exit(1);
+// Initialize Supabase Client for backend sync
+let supabaseClient: any = null;
+function getSupabaseClient() {
+  if (!supabaseClient) {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    if (supabaseUrl && supabaseAnonKey) {
+      supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+    } else {
+      console.warn("Supabase credentials missing on backend side!");
+    }
+  }
+  return supabaseClient;
 }
-
-if (!getApps().length) {
-  initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
-}
-const db = getFirestore(firebaseConfig.firestoreDatabaseId);
 
 const app = express();
 const PORT = 3000;
@@ -94,15 +91,19 @@ const ai = new GoogleGenAI({
   }
 });
 
-// Helper to get global ownerId (assuming single clinic owner for now)
+// Helper to get global ownerId (assuming single clinic owner for now) using Supabase
 async function getGlobalOwnerInfo() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
   try {
-    const clinics = await db.collection('clinics').limit(1).get();
-    if (clinics.empty) return null;
-    const clinic = clinics.docs[0].data();
+    const { data, error } = await supabase
+      .from('clinics')
+      .select('owner_id, id')
+      .limit(1);
+    if (error || !data || data.length === 0) return null;
     return {
-      ownerId: clinic.ownerId,
-      clinicId: clinics.docs[0].id
+      ownerId: data[0].owner_id,
+      clinicId: data[0].id
     };
   } catch (err) {
     console.error("Error fetching owner info:", err);
@@ -469,45 +470,56 @@ async function connectToWhatsApp() {
             // Ensure lead exists in CRM
             try {
               const ownerInfo = await getGlobalOwnerInfo();
-              if (ownerInfo) {
-                const patientsRef = db.collection('pacientes');
-                let existing = await patientsRef.where('phone', '==', phone).limit(1).get();
-                if (existing.empty) {
-                  existing = await patientsRef.where('telefone', '==', phone).limit(1).get();
+              const supabase = getSupabaseClient();
+              if (ownerInfo && supabase) {
+                let existingId: string | null = null;
+                let currentData: any = null;
+                
+                const { data: existingList } = await supabase
+                  .from('pacientes')
+                  .select('*')
+                  .eq('telefone', phone)
+                  .limit(1);
+                
+                if (existingList && existingList.length > 0) {
+                  existingId = existingList[0].id;
+                  currentData = existingList[0];
                 }
                 
-                if (existing.empty) {
+                if (!existingId) {
                   const displayName = contactsCache[remoteJid || ''] || pushName || `+${phone}`;
-                  await patientsRef.add({
-                    name: displayName,
-                    nome: displayName,
-                    phone: phone,
-                    telefone: phone,
-                    email: '',
-                    clinicId: ownerInfo.clinicId,
-                    ownerId: ownerInfo.ownerId,
-                    status: 'lead',
-                    interestedIn: 'Iniciou atendimento WA',
-                    lastContactAt: FieldValue.serverTimestamp(),
-                    createdAt: FieldValue.serverTimestamp(),
-                    source: 'whatsapp_real'
-                  });
+                  const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11);
+                  await supabase
+                    .from('pacientes')
+                    .insert({
+                      id,
+                      nome: displayName,
+                      telefone: phone,
+                      email: '',
+                      clinic_id: ownerInfo.clinicId,
+                      owner_id: ownerInfo.ownerId,
+                      status: 'lead',
+                      interested_in: 'Iniciou atendimento WA',
+                      last_contact_at: new Date().toISOString(),
+                      created_at: new Date().toISOString(),
+                      source: 'whatsapp_real'
+                    });
                   console.log(`New lead created automatically for ${phone} as ${displayName}`);
                 } else {
-                  const doc = existing.docs[0];
-                  const currentData = doc.data();
                   const updateData: any = {
-                    lastContactAt: FieldValue.serverTimestamp()
+                    last_contact_at: new Date().toISOString()
                   };
                   
                   // If current name is just fallback, and we have a rich name now, update it
                   const displayName = contactsCache[remoteJid || ''] || pushName;
-                  if (displayName && (!currentData.name || currentData.name.startsWith('WhatsApp ') || currentData.name.startsWith('+'))) {
-                    updateData.name = displayName;
+                  if (displayName && (!currentData.nome || currentData.nome.startsWith('WhatsApp ') || currentData.nome.startsWith('+'))) {
                     updateData.nome = displayName;
                   }
                   
-                  await doc.ref.update(updateData);
+                  await supabase
+                    .from('pacientes')
+                    .update(updateData)
+                    .eq('id', existingId);
                   console.log(`Updated lead status/timestamp for ${phone}`);
                 }
               }
@@ -518,6 +530,7 @@ async function connectToWhatsApp() {
             // Process with Gemini
             try {
               const aiResponse = await processWhatsAppWithGemini(text, remoteJid!);
+              const supabase = getSupabaseClient();
               
               if (aiResponse.text) {
                 await sock.sendMessage(remoteJid!, { text: aiResponse.text });
@@ -525,28 +538,32 @@ async function connectToWhatsApp() {
                 saveMessageToHistory(remoteJid!, 'assistant', aiResponse.text);
               }
               
-              if (aiResponse.leadInfo) {
+              if (aiResponse.leadInfo && supabase) {
                 broadcast({ type: 'lead_detected', leadInfo: aiResponse.leadInfo, remoteJid });
                 
                 // Update lead with Gemini extracted info
                 if (phone) {
-                  const patientsRef = db.collection('pacientes');
-                  let existing = await patientsRef.where('phone', '==', phone).limit(1).get();
-                  if (existing.empty) {
-                    existing = await patientsRef.where('telefone', '==', phone).limit(1).get();
-                  }
-                  if (!existing.empty) {
+                  const { data: existingList } = await supabase
+                    .from('pacientes')
+                    .select('*')
+                    .eq('telefone', phone)
+                    .limit(1);
+                    
+                  if (existingList && existingList.length > 0) {
+                    const existingPatient = existingList[0];
                     const { name, email, interestedIn } = aiResponse.leadInfo;
                     const updateData: any = {};
                     if (name) {
-                      updateData.name = name;
                       updateData.nome = name;
                     }
                     if (email) updateData.email = email;
-                    if (interestedIn) updateData.interestedIn = interestedIn;
+                    if (interestedIn) updateData.interested_in = interestedIn;
                     
                     if (Object.keys(updateData).length > 0) {
-                      await existing.docs[0].ref.update(updateData);
+                      await supabase
+                        .from('pacientes')
+                        .update(updateData)
+                        .eq('id', existingPatient.id);
                       console.log(`Lead ${phone} enriched with AI data`);
                     }
                   }

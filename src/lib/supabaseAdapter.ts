@@ -2,9 +2,11 @@ import { getSupabase } from './supabase';
 
 // Helper: Mapeador de tabelas de Firestore para Supabase Postgres
 export function getSupabaseTable(firestoreCollection: string): string {
-  if (firestoreCollection === 'agendamentos') return 'appointments';
-  if (firestoreCollection === 'pacientes') return 'pacientes';
-  return firestoreCollection;
+  if (!firestoreCollection) return '';
+  const collectionName = firestoreCollection.split('/')[0];
+  if (collectionName === 'agendamentos') return 'appointments';
+  if (collectionName === 'pacientes') return 'pacientes';
+  return collectionName;
 }
 
 // Helper: Converte campos camelCase para snake_case do Postgres
@@ -82,6 +84,32 @@ export function adaptInputData(table: string, data: any): any {
     }
     return adapted;
   }
+  
+  if (table === 'users') {
+    const adapted = { ...data };
+    
+    // Mapear campos comuns de Auth que podem estar no payload
+    if (adapted.displayName && !adapted.nome) adapted.nome = adapted.displayName;
+    if (adapted.photoURL && !adapted.avatarUrl) adapted.avatarUrl = adapted.photoURL;
+
+    // Lista de colunas válidas no banco de dados (em camelCase para bater com o input antes do camelToSnake)
+    const validCamelFields = [
+      'id', 'nome', 'email', 'cpf', 'whatsapp', 'dataNascimento', 
+      'endereco', 'bairro', 'cidade', 'estado', 'dataCadastro', 'crm', 'especialidade', 
+      'telefone', 'clinicName', 'logoUrl', 'avatarUrl', 'ownerId', 
+      'createdAt', 'updatedAt'
+    ];
+
+    // Filtrar apenas campos válidos
+    const filtered: any = {};
+    for (const key of Object.keys(adapted)) {
+      if (validCamelFields.includes(key)) {
+        filtered[key] = adapted[key];
+      }
+    }
+    
+    return filtered;
+  }
   return data;
 }
 
@@ -93,7 +121,37 @@ export function adaptOutputData(table: string, data: any): any {
     }
     return adapted;
   }
+  
   return data;
+}
+
+// Virtual storage for system collection
+export const virtualSystemStore: Record<string, any> = {};
+
+// LocalStorage Persistence Fallback for when Supabase keys are missing
+function getMockStorage(table: string): any[] {
+  if (typeof window === 'undefined') return [];
+  const key = `sb_mock_${table}`;
+  const saved = localStorage.getItem(key);
+  if (!saved || saved === 'undefined' || saved === 'null') return [];
+  try {
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn(`[Supabase Mock] Error parsing table ${table}, resetting:`, e);
+    localStorage.removeItem(key);
+    return [];
+  }
+}
+
+function saveMockStorage(table: string, data: any[]) {
+  if (typeof window === 'undefined') return;
+  const key = `sb_mock_${table}`;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.error(`[Supabase Mock] Error saving table ${table}:`, e);
+  }
 }
 
 // --- TIPOS DE REFERÊNCIAS ---
@@ -173,19 +231,25 @@ export function triggerListenersForTable(firestoreCollection: string) {
 
 async function fetchAndTrigger(listener: ActiveListener) {
   try {
-    const data = await executeSupabaseQuery(listener.queryRef);
-    const docs = data.map(item => ({
-      id: item.id,
-      exists: () => true,
-      data: () => item
-    }));
-    const snapshot = {
-      docs,
-      empty: docs.length === 0,
-      size: docs.length,
-      forEach: (callback: any) => docs.forEach(callback)
-    };
-    listener.onNext(snapshot);
+    const isDoc = listener.queryRef && listener.queryRef.type === 'doc';
+    if (isDoc) {
+      const docSnapshot = await getDoc(listener.queryRef);
+      listener.onNext(docSnapshot);
+    } else {
+      const data = await executeSupabaseQuery(listener.queryRef);
+      const docs = data.map(item => ({
+        id: item.id,
+        exists: () => true,
+        data: () => item
+      }));
+      const snapshot = {
+        docs,
+        empty: docs.length === 0,
+        size: docs.length,
+        forEach: (callback: any) => docs.forEach(callback)
+      };
+      listener.onNext(snapshot);
+    }
   } catch (err) {
     if (listener.onError) {
       listener.onError(err);
@@ -197,14 +261,28 @@ async function fetchAndTrigger(listener: ActiveListener) {
 
 // --- COMANDOS CRUD ---
 export async function executeSupabaseQuery(queryRef: any): Promise<any[]> {
-  const supabase = getSupabase() as any;
-  if (!supabase) {
-    console.warn("Supabase não configurado. Adicione VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.");
-    return [];
-  }
-
   const isQuery = queryRef.type === 'query';
   const firestoreCollection = isQuery ? queryRef.collection.path : queryRef.path;
+  if (firestoreCollection === 'system') {
+    const id = isQuery ? '' : queryRef.id;
+    return [virtualSystemStore[id] || { id, timestamp: new Date().toISOString() }];
+  }
+
+  const supabase = getSupabase() as any;
+  if (!supabase) {
+    const table = getSupabaseTable(firestoreCollection);
+    const store = getMockStorage(table);
+    // Simulação básica de filtros (apenas == por enquanto para o mock)
+    let filtered = [...store];
+    const filters = isQuery ? queryRef.filters : [];
+    for (const filter of filters) {
+      if (filter && filter.type === 'where' && filter.op === '==') {
+        filtered = filtered.filter(item => item[filter.field] === filter.value);
+      }
+    }
+    return filtered;
+  }
+
   const table = getSupabaseTable(firestoreCollection);
 
   let q = supabase.from(table).select('*');
@@ -276,12 +354,29 @@ export async function executeSupabaseQuery(queryRef: any): Promise<any[]> {
 
 // 1. ADD DOC
 export async function addDoc(collectionRef: any, data: any) {
-  const supabase = getSupabase() as any;
-  if (!supabase) throw new Error('Supabase client não configurado');
+  if (collectionRef.path === 'system') {
+    const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11);
+    virtualSystemStore[id] = data;
+    triggerListenersForTable(collectionRef.path);
+    return {
+      id,
+      path: `${collectionRef.path}/${id}`
+    };
+  }
 
+  const supabase = getSupabase() as any;
   const table = getSupabaseTable(collectionRef.path);
-  // Gerar ID sequencial de string ou UUID
   const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11);
+
+  if (!supabase) {
+    console.warn(`[SupabaseAdapter] Supabase não configurado. Usando Mock para tabela ${table}.`);
+    const store = getMockStorage(table);
+    const newDoc = { id, ...data, createdAt: new Date().toISOString() };
+    store.push(newDoc);
+    saveMockStorage(table, store);
+    triggerListenersForTable(collectionRef.path);
+    return { id, path: `${collectionRef.path}/${id}` };
+  }
 
   const adaptedData = adaptInputData(table, data);
   const pgData = camelToSnake({ id, ...adaptedData });
@@ -310,34 +405,75 @@ export async function addDoc(collectionRef: any, data: any) {
 
 // 2. SET DOC
 export async function setDoc(docRef: any, data: any, options?: any) {
-  const supabase = getSupabase() as any;
-  if (!supabase) throw new Error('Supabase client não configurado');
+  if (docRef.path === 'system') {
+    virtualSystemStore[docRef.id] = data;
+    triggerListenersForTable(docRef.path);
+    return;
+  }
 
+  const supabase = getSupabase() as any;
   const table = getSupabaseTable(docRef.path);
   const id = docRef.id;
+
+  if (!supabase) {
+    console.warn(`[SupabaseAdapter] Supabase não configurado. Usando Mock para tabela ${table}.`);
+    const store = getMockStorage(table);
+    const existingIdx = store.findIndex(item => item.id === id);
+    if (existingIdx !== -1) {
+      if (options?.merge) {
+        store[existingIdx] = { ...store[existingIdx], ...data, updatedAt: new Date().toISOString() };
+      } else {
+        store[existingIdx] = { id, ...data, updatedAt: new Date().toISOString() };
+      }
+    } else {
+      store.push({ id, ...data, createdAt: new Date().toISOString() });
+    }
+    saveMockStorage(table, store);
+    triggerListenersForTable(docRef.path);
+    return;
+  }
 
   const adaptedData = adaptInputData(table, data);
   const pgData = camelToSnake({ id, ...adaptedData });
 
+  console.log(`[SupabaseAdapter] Executando setDoc na tabela ${table} para ID ${id}. Dados:`, pgData);
+
   const { error } = await supabase
     .from(table)
-    .upsert(pgData, { onConflict: 'id' });
+    .upsert(pgData, { onConflict: table === 'users' ? 'email' : 'id' });
 
   if (error) {
-    console.error(`Erro ao upsert na tabela ${table}:`, error);
+    console.error(`[SupabaseAdapter] Erro ao upsert na tabela ${table}:`, error);
     throw error;
   }
+  
+  console.log(`[SupabaseAdapter] setDoc concluído com sucesso para ${table}/${id}`);
 
   triggerListenersForTable(docRef.path);
 }
 
 // 3. UPDATE DOC
 export async function updateDoc(docRef: any, data: any) {
-  const supabase = getSupabase() as any;
-  if (!supabase) throw new Error('Supabase client não configurado');
+  if (docRef.path === 'system') {
+    virtualSystemStore[docRef.id] = { ...virtualSystemStore[docRef.id], ...data };
+    triggerListenersForTable(docRef.path);
+    return;
+  }
 
+  const supabase = getSupabase() as any;
   const table = getSupabaseTable(docRef.path);
   const id = docRef.id;
+
+  if (!supabase) {
+    const store = getMockStorage(table);
+    const idx = store.findIndex(item => item.id === id);
+    if (idx !== -1) {
+      store[idx] = { ...store[idx], ...data, updatedAt: new Date().toISOString() };
+      saveMockStorage(table, store);
+    }
+    triggerListenersForTable(docRef.path);
+    return;
+  }
 
   const adaptedData = adaptInputData(table, data);
   const pgData = camelToSnake(adaptedData);
@@ -359,11 +495,23 @@ export async function updateDoc(docRef: any, data: any) {
 
 // 4. DELETE DOC
 export async function deleteDoc(docRef: any) {
-  const supabase = getSupabase() as any;
-  if (!supabase) throw new Error('Supabase client não configurado');
+  if (docRef.path === 'system') {
+    delete virtualSystemStore[docRef.id];
+    triggerListenersForTable(docRef.path);
+    return;
+  }
 
+  const supabase = getSupabase() as any;
   const table = getSupabaseTable(docRef.path);
   const id = docRef.id;
+
+  if (!supabase) {
+    const store = getMockStorage(table);
+    const filtered = store.filter(item => item.id !== id);
+    saveMockStorage(table, filtered);
+    triggerListenersForTable(docRef.path);
+    return;
+  }
 
   const { error } = await supabase
     .from(table)
@@ -380,11 +528,29 @@ export async function deleteDoc(docRef: any) {
 
 // 5. GET DOC
 export async function getDoc(docRef: any) {
-  const supabase = getSupabase() as any;
-  if (!supabase) throw new Error('Supabase client não configurado');
+  if (docRef.path === 'system') {
+    const id = docRef.id;
+    const data = virtualSystemStore[id] || { timestamp: new Date().toISOString() };
+    return {
+      id,
+      exists: () => true,
+      data: () => data
+    };
+  }
 
+  const supabase = getSupabase() as any;
   const table = getSupabaseTable(docRef.path);
   const id = docRef.id;
+
+  if (!supabase) {
+    const store = getMockStorage(table);
+    const data = store.find(item => item.id === id);
+    return {
+      id,
+      exists: () => !!data,
+      data: () => data
+    };
+  }
 
   const { data, error } = await supabase
     .from(table)
@@ -392,9 +558,36 @@ export async function getDoc(docRef: any) {
     .eq('id', id)
     .maybeSingle();
 
+  if (error || !data) {
+    if (table === 'users') {
+      const { data: emailData, error: emailError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', docRef.id || '')
+        .maybeSingle();
+      
+      if (!emailError && emailData) {
+        console.log(`[SupabaseAdapter] Registro encontrado via email em users: ${id}`, emailData);
+        let cleanData = snakeToCamel(emailData);
+        cleanData = adaptOutputData(table, cleanData);
+        return {
+          id: emailData.id,
+          exists: () => true,
+          data: () => cleanData
+        };
+      }
+    }
+  }
+
   if (error) {
-    console.error(`Erro ao buscar registro na tabela ${table}:`, error);
+    console.error(`[SupabaseAdapter] Erro ao buscar registro na tabela ${table} com ID ${id}:`, error);
     throw error;
+  }
+
+  if (data) {
+    console.log(`[SupabaseAdapter] Registro encontrado em ${table}/${id}`, data);
+  } else {
+    console.log(`[SupabaseAdapter] Registro NÃO encontrado em ${table}/${id}`);
   }
 
   let cleanData = data ? snakeToCamel(data) : null;
@@ -430,6 +623,7 @@ export function onSnapshot(
   onError?: (error: any) => void
 ) {
   const isQuery = queryRef.type === 'query';
+  const isDoc = queryRef.type === 'doc';
   const firestoreCollection = isQuery ? queryRef.collection.path : queryRef.path;
   const table = getSupabaseTable(firestoreCollection);
 
@@ -452,7 +646,7 @@ export function onSnapshot(
   const supabase = getSupabase() as any;
   let channel: any = null;
 
-  if (supabase) {
+  if (supabase && firestoreCollection !== 'system') {
     channel = supabase
       .channel(`rt:${table}:${listenerId}`)
       .on(
@@ -516,4 +710,187 @@ class SupabaseBatch {
 
 export function writeBatch(db: any) {
   return new SupabaseBatch();
+}
+
+// --- FIREBASE AUTH COMPATIBILITY LAYER ---
+
+export const db = { type: 'supabase_mock_firestore_db' };
+
+export interface User {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  phoneNumber: string | null;
+  emailVerified: boolean;
+  isAnonymous: boolean;
+  getIdToken?: () => Promise<string>;
+  getIdTokenResult?: () => Promise<any>;
+  reload?: () => Promise<void>;
+  providerId?: string;
+  toJSON?: () => any;
+  tenantId?: string | null;
+  providerData?: any[];
+}
+
+// Global subscribers for onAuthStateChanged
+const authStateListeners: Array<(user: User | null) => void> = [];
+
+// Helper to get or create demo/logged-in user from localStorage
+function getSavedUser(): User | null {
+  const saved = localStorage.getItem('supabase_mock_user');
+  if (saved && saved !== 'undefined' && saved !== 'null') {
+    try {
+      return JSON.parse(saved);
+    } catch {
+      console.warn("Falha ao parsear usuário salvo, limpando...");
+      localStorage.removeItem('supabase_mock_user');
+      return null;
+    }
+  }
+  // Try to check if google demo session is active
+  const isDemo = localStorage.getItem('google_demo_logged_in_v1') === 'true';
+  if (isDemo) {
+    const defaultUser: User = {
+      uid: 'demo-user-id-supabase',
+      email: 'clinica.demo@gmail.com',
+      displayName: 'Clínica Demo',
+      photoURL: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&q=80&w=120',
+      phoneNumber: null,
+      emailVerified: true,
+      isAnonymous: false,
+    };
+    localStorage.setItem('supabase_mock_user', JSON.stringify(defaultUser));
+    return defaultUser;
+  }
+  return null;
+}
+
+let currentUserInMock: User | null = getSavedUser();
+
+export const auth = {
+  get currentUser() {
+    return currentUserInMock;
+  },
+  onAuthStateChanged(callback: (user: User | null) => void) {
+    authStateListeners.push(callback);
+    // Call immediately with current state
+    callback(currentUserInMock);
+    return () => {
+      const idx = authStateListeners.indexOf(callback);
+      if (idx !== -1) authStateListeners.splice(idx, 1);
+    };
+  },
+  async signOut() {
+    currentUserInMock = null;
+    localStorage.removeItem('supabase_mock_user');
+    localStorage.removeItem('google_demo_logged_in_v1');
+    localStorage.removeItem('google_access_token');
+    authStateListeners.forEach(listener => listener(null));
+  }
+};
+
+// Dispatch auth state change
+function setAuthenticatedUser(user: User | null) {
+  currentUserInMock = user;
+  if (user) {
+    localStorage.setItem('supabase_mock_user', JSON.stringify(user));
+    localStorage.setItem('google_demo_logged_in_v1', 'true');
+    localStorage.setItem('google_access_token', 'demo-token');
+  } else {
+    localStorage.removeItem('supabase_mock_user');
+    localStorage.removeItem('google_demo_logged_in_v1');
+    localStorage.removeItem('google_access_token');
+  }
+  authStateListeners.forEach(listener => listener(user));
+}
+
+// Google Auth Provider mock class
+export class GoogleAuthProvider {
+  static credentialFromResult(result: any) {
+    return { accessToken: result?.accessToken || 'demo-token' };
+  }
+}
+
+export async function getRedirectResult(authObj?: any) {
+  return null;
+}
+
+// Google Sign-In helper
+export const signInWithGoogle = async (allowRedirect = true) => {
+  const user: User = {
+    uid: 'demo-user-id-supabase',
+    email: 'clinica.demo@gmail.com',
+    displayName: 'Clínica Demo',
+    photoURL: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&q=80&w=120',
+    phoneNumber: null,
+    emailVerified: true,
+    isAnonymous: false,
+  };
+  setAuthenticatedUser(user);
+  return {
+    user,
+    accessToken: 'demo-token'
+  };
+};
+
+// Email-Password Credentials Sign-In
+export async function signInWithEmailAndPassword(authObj: any, email: string, pass: string) {
+  const user: User = {
+    uid: 'user_' + Math.abs(email.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0)).toString(16),
+    email: email,
+    displayName: email.split('@')[0],
+    photoURL: null,
+    phoneNumber: null,
+    emailVerified: true,
+    isAnonymous: false,
+  };
+  setAuthenticatedUser(user);
+  return { user };
+}
+
+// Email-Password Signup
+export async function createUserWithEmailAndPassword(authObj: any, email: string, pass: string) {
+  const user: User = {
+    uid: 'user_' + Math.abs(email.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0)).toString(16),
+    email: email,
+    displayName: email.split('@')[0],
+    photoURL: null,
+    phoneNumber: null,
+    emailVerified: true,
+    isAnonymous: false,
+  };
+  setAuthenticatedUser(user);
+  return { user };
+}
+
+// Anonymous logic
+export async function signInAnonymously(authObj: any) {
+  const user: User = {
+    uid: 'anonymous_' + Math.random().toString(36).substring(2, 11),
+    email: null,
+    displayName: 'Usuário Anônimo',
+    photoURL: null,
+    phoneNumber: null,
+    emailVerified: false,
+    isAnonymous: true,
+  };
+  setAuthenticatedUser(user);
+  return { user };
+}
+
+// Password reset mock
+export async function sendPasswordResetEmail(authObj: any, email: string) {
+  console.log(`Password reset email sent to: ${email}`);
+  return true;
+}
+
+// Update profile mock
+export async function updateProfile(userObj: any, data: { displayName?: string, photoURL?: string }) {
+  if (currentUserInMock) {
+    if (data.displayName) currentUserInMock.displayName = data.displayName;
+    if (data.photoURL) currentUserInMock.photoURL = data.photoURL;
+    setAuthenticatedUser(currentUserInMock);
+  }
+  return true;
 }

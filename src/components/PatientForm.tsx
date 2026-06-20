@@ -29,6 +29,23 @@ const formatUploadDate = (isoString?: string, fallbackIso?: string) => {
   }
 };
 
+const formatCadastroDate = (isoString?: string) => {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (e) {
+    return '';
+  }
+};
+
 const compressAndToDataURL = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     // Se não for imagem (Ex: PDF), converte para Base64 bruto
@@ -455,7 +472,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
       } else {
         const docRef = await addDoc(collection(db, 'pacientes'), {
           ...patientData,
-          ownerId: auth.currentUser?.uid,
+          ownerId: auth.currentUser?.uid || 'demo-user-id-supabase',
           createdAt: new Date().toISOString()
         });
         
@@ -535,7 +552,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
             <User size={18} className="text-blue-500" /> Cadastro de Paciente
             {initialData && (
                 <span className="ml-auto text-[10px] text-neutral-400 font-mono italic">
-                    ID: {getPatientId(initialData)}
+                    ID: {getPatientId(initialData)} {(initialData.createdAt || initialData.created_at) && `| Cadastrado em: ${formatCadastroDate(initialData.createdAt || initialData.created_at)}`}
                 </span>
             )}
           </h3>
@@ -546,7 +563,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
               <input 
                 type="text" 
                 readOnly
-                value={getPatientId(initialData)} 
+                value={`${getPatientId(initialData)}${initialData?.createdAt || initialData?.created_at ? ` (Cadastrado em: ${formatCadastroDate(initialData.createdAt || initialData.created_at)})` : ''}`} 
                 className="w-full py-2.5 px-3.5 sm:py-3 sm:px-4 bg-neutral-100 border border-neutral-200 rounded-2xl outline-none font-mono text-xs font-bold text-neutral-500 cursor-not-allowed" 
               />
             </div>

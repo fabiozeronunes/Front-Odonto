@@ -1,55 +1,64 @@
-import { auth } from './firebase';
+import { doc, getDoc, setDoc } from './supabaseAdapter';
+
+export const robustSetDoc = async (ref: any, data: any, options?: any) => {
+  let retries = 5;
+  let delay = 300;
+  while (retries > 0) {
+    try {
+      if (options) {
+        await setDoc(ref, data, options);
+      } else {
+        await setDoc(ref, data);
+      }
+      return;
+    } catch (err: any) {
+      retries--;
+      const matchesPermissionDenied = err.message?.toLowerCase().includes('permission') || 
+                                     err.code?.toLowerCase().includes('permission') ||
+                                     err.message?.toLowerCase().includes('rls');
+      if (matchesPermissionDenied && retries > 0) {
+        console.warn(`Firestore setDoc retry due to transient/permission error in ${delay}ms... (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 1.5;
+      } else {
+        throw err;
+      }
+    }
+  }
+};
+
+export const robustGetDoc = async (ref: any) => {
+  let retries = 5;
+  let delay = 300;
+  while (retries > 0) {
+    try {
+      const snap = await getDoc(ref);
+      return snap;
+    } catch (err: any) {
+      retries--;
+      const matchesPermissionDenied = err.message?.toLowerCase().includes('permission') || 
+                                     err.code?.toLowerCase().includes('permission') ||
+                                     err.message?.toLowerCase().includes('rls');
+      if (matchesPermissionDenied && retries > 0) {
+        console.warn(`Firestore getDoc retry due to transient/permission error in ${delay}ms... (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 1.5;
+      } else {
+        throw err;
+      }
+    }
+  }
+};
 
 export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
+  CREATE = 'CREATE',
+  READ = 'READ',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE',
+  LIST = 'LIST'
 }
 
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error:', errInfo);
-  
-  // Use console error instead of blocking alert
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.includes('permission-denied')) {
-    console.error("Permissão negada. Você não tem acesso a esta operação.");
-  } else {
-    console.error("Erro no banco de dados: " + message);
-  }
-}
+export const handleFirestoreError = (error: any, operation: OperationType, collection: string) => {
+  console.error(`[Firestore Error] ${operation} in ${collection}:`, error);
+  return error;
+};

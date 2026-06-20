@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS users (
     bairro TEXT,
     cidade TEXT,
     estado TEXT,
+    data_cadastro TEXT,
+    crm TEXT,
+    especialidade TEXT,
+    telefone TEXT,
+    clinic_name TEXT,
+    logo_url TEXT,
     owner_id TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -210,16 +216,16 @@ ALTER TABLE deleted_chats ENABLE ROW LEVEL SECURITY;
 
 -- Exemplo simples de regras de acesso (qualquer pessoa autenticada pode gerenciar seus próprios registros usando owner_id)
 -- Alinhamos owner_id com auth.uid() do Supabase Auth para controle rígido por usuário se desejado.
-CREATE POLICY "Permitir tudo para usuários autenticados (Users)" ON users FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Clinics)" ON clinics FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Dentists)" ON dentists FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Pacientes)" ON pacientes FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Appointments)" ON appointments FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Procedures)" ON procedures FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Specialties)" ON specialties FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Funnel Stages)" ON funnel_stages FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Quick Responses)" ON quick_responses FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Response Categories)" ON response_categories FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (WhatsApp Chats)" ON whatsapp_chats FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (WhatsApp Messages)" ON whatsapp_messages FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Permitir tudo para usuários autenticados (Deleted Chats)" ON deleted_chats FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Users)" ON users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Clinics)" ON clinics FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Dentists)" ON dentists FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Pacientes)" ON pacientes FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Appointments)" ON appointments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Procedures)" ON procedures FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Specialties)" ON specialties FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Funnel Stages)" ON funnel_stages FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Quick Responses)" ON quick_responses FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Response Categories)" ON response_categories FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (WhatsApp Chats)" ON whatsapp_chats FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (WhatsApp Messages)" ON whatsapp_messages FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (Deleted Chats)" ON deleted_chats FOR ALL USING (true) WITH CHECK (true);

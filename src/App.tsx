@@ -27,11 +27,11 @@ import {
   Award,
   ChevronDown,
   TrendingUp,
-  Database
+  Database,
+  UserCheck
 } from 'lucide-react';
 import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db } from './lib/firebase';
-import { User } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, serverTimestamp } from './lib/supabaseAdapter';
+import { doc, onSnapshot, setDoc, serverTimestamp, User } from './lib/supabaseAdapter';
 
 // Components (will be extracted)
 import Dashboard from './components/Dashboard';
@@ -49,8 +49,7 @@ import PatientManager from './components/PatientManager';
 import ProcedureManager from './components/ProcedureManager';
 import SpecialtyManager from './components/SpecialtyManager';
 import FinancialReports from './components/FinancialReports';
-import Profile from './components/Profile';
-import SupabaseMigration from './components/SupabaseMigration';
+import UserRegistration from './components/UserRegistration';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -146,9 +145,9 @@ export default function App() {
         console.log("[Auth Trace] Demo or Anonymous user is logged in, overriding details with mock user.");
         const mockGoogleUser = {
           uid: u ? u.uid : 'google-demo-user-123',
-          displayName: 'Fábio Zero Nunes (Demo Google)',
-          email: 'fabiozeronunes@gmail.com',
-          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop',
+          displayName: u?.displayName || 'Fábio Zero Nunes (Demo Google)',
+          email: u?.email || 'fabiozeronunes@gmail.com',
+          photoURL: u?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop',
           emailVerified: true,
           isAnonymous: u ? u.isAnonymous : true,
           providerId: 'google.com',
@@ -386,7 +385,6 @@ export default function App() {
     { id: 'ai_ads_connections', label: 'CONEXÕES AI ADS', icon: Sparkles },
     { id: 'ai_connections', label: 'CONEXÃO AI', icon: Brain },
     { id: 'financial_reports', label: 'RELATÓRIOS FINANCEIROS', icon: TrendingUp },
-    { id: 'supabase_migrate', label: 'MIGRAR PARA SUPABASE', icon: Database },
   ];
 
   const getActiveTabLabel = () => {
@@ -400,7 +398,7 @@ export default function App() {
     return '';
   };
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = (initialTab: string = 'dashboard') => {
     sessionStorage.removeItem('auth_in_progress');
     
     const isDemoLoggedIn = localStorage.getItem('google_demo_logged_in_v1') === 'true';
@@ -409,9 +407,9 @@ export default function App() {
       console.log("[Auth Trace] Demo Sandbox detected in handleLoginSuccess, applying mock state.");
       const mockGoogleUser = {
         uid: u ? u.uid : 'google-demo-user-123',
-        displayName: 'Fábio Zero Nunes (Demo Google)',
-        email: 'fabiozeronunes@gmail.com',
-        photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop',
+        displayName: u?.displayName || 'Fábio Zero Nunes (Demo Google)',
+        email: u?.email || 'fabiozeronunes@gmail.com',
+        photoURL: u?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop',
         emailVerified: true,
         isAnonymous: u ? u.isAnonymous : true,
         providerId: 'google.com',
@@ -423,10 +421,7 @@ export default function App() {
       setUser(mockGoogleUser);
       setView('dashboard');
       setIsSidebarOpen(true);
-      setActiveTab(prev => {
-        const params = new URLSearchParams(window.location.search);
-        return params.get('tab') || prev || 'dashboard';
-      });
+      setActiveTab(initialTab);
       localStorage.setItem('logged_in_view', 'dashboard');
       return;
     }
@@ -434,10 +429,7 @@ export default function App() {
     setUser(u);
     setView('dashboard');
     setIsSidebarOpen(true); // Conecta com menu aberto
-    setActiveTab(prev => {
-      const params = new URLSearchParams(window.location.search);
-      return params.get('tab') || prev || 'dashboard';
-    }); // Dashboard ativo atrás ou url parametrizada
+    setActiveTab(initialTab); // Dashboard ativo atrás ou url parametrizada
     localStorage.setItem('logged_in_view', 'dashboard');
   };
 
@@ -601,6 +593,8 @@ export default function App() {
               <button onClick={() => {
                 localStorage.removeItem('google_demo_logged_in_v1');
                 localStorage.removeItem('google_access_token');
+                localStorage.removeItem('supabase_mock_user');
+                localStorage.removeItem('logged_in_view');
                 setUser(null);
                 setView('landing');
                 auth.signOut().catch(() => {});
@@ -633,12 +627,12 @@ export default function App() {
             <span className="text-sm font-medium text-neutral-600 hidden md:inline">
               Usuário: {safeUser.displayName || safeUser.email}
             </span>
+            <button onClick={() => setActiveTab('user_registration')} className="p-2.5 text-neutral-500 hover:bg-neutral-100 rounded-xl" title="Dados Cadastrais">
+              <UserCheck size={20} />
+            </button>
             <button className="p-2.5 text-neutral-500 hover:bg-neutral-100 rounded-xl relative">
               <Bell size={20} />
               <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-            </button>
-            <button onClick={() => setActiveTab('profile')} className="p-2.5 text-neutral-500 hover:bg-neutral-100 rounded-xl" title="Configurações">
-              <Settings size={20} />
             </button>
           </div>
         </header>
@@ -661,14 +655,13 @@ export default function App() {
               {activeTab === 'patients' && <PatientManager />}
               {activeTab === 'crm' && <CRM onNavigate={setActiveTab} />}
               {activeTab === 'financial_reports' && <FinancialReports />}
-              {activeTab === 'profile' && <Profile onNavigate={setActiveTab} />}
+              {activeTab === 'user_registration' && <UserRegistration onComplete={() => setActiveTab('dashboard')} />}
               {activeTab === 'agenda' && <Agenda accessToken={accessToken} onConnectGoogle={handleLogin} onNavigate={setActiveTab} onDisconnectGoogle={() => setAccessToken(null)} syncTrigger={syncTrigger} />}
               {activeTab === 'whatsapp' && <WhatsAppSimulator />}
               {activeTab === 'ads' && <AdGenerator />}
               {activeTab === 'connections' && <Connections type="general" setActiveTab={setActiveTab} accessToken={accessToken} onConnectGoogle={handleLogin} onSyncGoogle={() => setSyncTrigger(prev => prev + 1)} onDisconnectGoogle={() => setAccessToken(null)} />}
               {activeTab === 'ai_ads_connections' && <Connections type="ads" setActiveTab={setActiveTab} accessToken={accessToken} onConnectGoogle={handleLogin} onSyncGoogle={() => setSyncTrigger(prev => prev + 1)} onDisconnectGoogle={() => setAccessToken(null)} />}
               {activeTab === 'ai_connections' && <AIConnections />}
-              {activeTab === 'supabase_migrate' && <SupabaseMigration />}
             </motion.div>
           </AnimatePresence>
         </div>

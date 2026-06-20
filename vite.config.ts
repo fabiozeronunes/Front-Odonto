@@ -14,7 +14,6 @@ export default defineConfig(() => {
     optimizeDeps: {
       exclude: [
         '@whiskeysockets/baileys',
-        'firebase-admin',
         'googleapis',
         'google-auth-library',
         'pino',
@@ -27,7 +26,6 @@ export default defineConfig(() => {
       rollupOptions: {
         external: [
           '@whiskeysockets/baileys',
-          'firebase-admin',
           'googleapis',
           'google-auth-library',
           'pino',
