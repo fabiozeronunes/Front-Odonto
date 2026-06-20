@@ -31,7 +31,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db } from './lib/firebase';
-import { doc, onSnapshot, setDoc, serverTimestamp, User } from './lib/supabaseAdapter';
+import { doc, onSnapshot, setDoc, serverTimestamp, User, syncLegacyData } from './lib/supabaseAdapter';
 
 // Components (will be extracted)
 import Dashboard from './components/Dashboard';
@@ -140,6 +140,11 @@ export default function App() {
     const unsubscribe = auth.onAuthStateChanged((u) => {
       console.log("Auth state changed:", u?.email || "No user");
       
+      if (u) {
+        // Trigger background sync for legacy localStorage data
+        syncLegacyData();
+      }
+
       const isDemoLoggedIn = localStorage.getItem('google_demo_logged_in_v1') === 'true';
       if (isDemoLoggedIn || (u && u.isAnonymous)) {
         console.log("[Auth Trace] Demo or Anonymous user is logged in, overriding details with mock user.");

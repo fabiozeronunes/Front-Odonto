@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Brain, Sparkles, Cpu, Image as ImageIcon, Search, Key, Check, X, RefreshCw, ExternalLink, ShieldCheck, Settings2, Database, Zap, Terminal, Sliders, Eye, EyeOff, AlertCircle, Play, Video, Film } from 'lucide-react';
 import { paidAIs, freeAIs } from '../data/aiModels';
+import { 
+  db, 
+  collection, 
+  onSnapshot, 
+  query, 
+  where, 
+  setDoc, 
+  doc, 
+  auth 
+} from '../lib/supabaseAdapter';
 
 interface AIConnectionState {
   id: string;
@@ -23,21 +33,8 @@ export default function AIConnections() {
   const [latencyData, setLatencyData] = useState<Record<string, number>>({});
   const [showKeyMap, setShowKeyMap] = useState<Record<string, boolean>>({});
   
-  // Real LocalStorage state persistence
-  const [savedState, setSavedState] = useState<Record<string, AIConnectionState>>(() => {
-    try {
-      const saved = localStorage.getItem('ai_connections_v1');
-      if (saved) {
-        const trimmed = saved.trim();
-        if (trimmed && trimmed !== 'undefined' && trimmed !== 'null') {
-          return JSON.parse(trimmed);
-        }
-      }
-    } catch (e) {
-      console.error("Erro ao ler conexões de IA salvas:", e);
-    }
-    return {};
-  });
+  // Synchronized state with database
+  const [savedState, setSavedState] = useState<Record<string, AIConnectionState>>({});
 
   // Modal Setup state
   const [modalKey, setModalKey] = useState('');
@@ -50,8 +47,33 @@ export default function AIConnections() {
   });
 
   useEffect(() => {
-    localStorage.setItem('ai_connections_v1', JSON.stringify(savedState));
-  }, [savedState]);
+    if (!auth.currentUser) return;
+    
+    console.log('[AIConnections] Carregando conexões do banco de dados...');
+    const q = query(
+      collection(db, 'ai_connections'),
+      where('ownerId', '==', auth.currentUser.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const conns: Record<string, AIConnectionState> = {};
+      snapshot.forEach((doc: any) => {
+        const data = doc.data();
+        conns[doc.id] = {
+          id: doc.id,
+          connected: data.status === 'active',
+          apiKey: data.apiKey || '',
+          preferredModel: data.model || '',
+          activeModules: data.activeModules || { whatsapp: true, ads: true, crm: false },
+          customUrl: data.customUrl || ''
+        };
+      });
+      console.log('[AIConnections] Conexões carregadas:', Object.keys(conns).length);
+      setSavedState(conns);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Handle open configuration
   const handleOpenSetup = (id: string, defaultModel: string) => {
@@ -73,28 +95,42 @@ export default function AIConnections() {
   };
 
   // Save changes
-  const handleSaveConnection = (id: string) => {
-    setSavedState(prev => ({
-      ...prev,
-      [id]: {
-        id,
-        connected: modalKey.length > 3 || id === 'ollama' || id === 'huggingface_spaces' || modalCustomUrl.length > 5, // some free items don't strictly require local key
-        apiKey: modalKey,
-        activeModules: modalModules,
-        preferredModel: modalModel,
-        customUrl: modalCustomUrl
-      }
-    }));
-    setSelectedAI(null);
+  const handleSaveConnection = async (id: string) => {
+    if (!auth.currentUser) return;
+    
+    const connData = {
+      name: id, // Pode ser melhorado pegando o nome real do modelo
+      provider: id.split('_')[0] || id,
+      apiKey: modalKey,
+      model: modalModel,
+      activeModules: modalModules,
+      customUrl: modalCustomUrl,
+      status: 'active',
+      ownerId: auth.currentUser.uid,
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, 'ai_connections', id), connData, { merge: true });
+      setSelectedAI(null);
+    } catch (error) {
+      console.error('Erro ao salvar conexão de IA:', error);
+    }
   };
 
   // Disconnect
-  const handleDisconnect = (id: string) => {
-    setSavedState(prev => {
-      const copy = { ...prev };
-      delete copy[id];
-      return copy;
-    });
+  const handleDisconnect = async (id: string) => {
+    if (!auth.currentUser) return;
+    
+    try {
+      // Em vez de deletar, podemos apenas desativar para manter histórico, ou deletar se preferir
+      await setDoc(doc(db, 'ai_connections', id), {
+        status: 'inactive',
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (error) {
+      console.error('Erro ao desconectar IA:', error);
+    }
   };
 
   // Run connection test

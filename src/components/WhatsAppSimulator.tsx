@@ -108,7 +108,7 @@ export default function WhatsAppSimulator() {
     return localStorage.getItem('wa_active_chat_id');
   });
 
-  const [chats, setChats] = useState<Record<string, { name: string; lastMessage: string; timestamp: string; messages: Message[]; source?: string }>>(() => {
+  const [chats, setChats] = useState<Record<string, { name: string; lastMessage: string; timestamp: string; messages: Message[]; source?: string; interestedIn?: string }>>(() => {
     let baseChats: any = {};
     try {
       const saved = localStorage.getItem('wa_simulator_chats');
@@ -164,6 +164,8 @@ export default function WhatsAppSimulator() {
           name: data.name,
           lastMessage: data.lastMessage,
           timestamp: data.timestamp,
+          source: data.source || null,
+          interestedIn: data.interestedIn || '',
           messages: [] // Messages will be loaded per chat
         };
       });
@@ -178,7 +180,9 @@ export default function WhatsAppSimulator() {
               ...merged[id], 
               name: syncedChats[id].name,
               lastMessage: syncedChats[id].lastMessage,
-              timestamp: syncedChats[id].timestamp
+              timestamp: syncedChats[id].timestamp,
+              source: syncedChats[id].source,
+              interestedIn: syncedChats[id].interestedIn
             };
           }
         });
@@ -800,10 +804,19 @@ export default function WhatsAppSimulator() {
 
   // Update CRM source channel directly
   const handleUpdateCRMChannel = async (channel: string) => {
-    if (!activeChatId) return;
+    if (!activeChatId || !currentUser) return;
     const phone = activeChatId.split('@')[0];
     const activeChat = chats[activeChatId];
+    const cleanedJid = activeChatId.replace('@s.whatsapp.net', '').replace(/\D/g, '') + '@s.whatsapp.net';
+    
     try {
+      // 1. Update/Persistence in WhatsApp Chats (for immediate and non-synced feedback)
+      await setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), {
+        source: channel,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // 2. Update/Sync with CRM
       if (matchedPatient) {
         await updateDoc(doc(db, 'pacientes', matchedPatient.id), {
           source: channel,
@@ -833,26 +846,37 @@ export default function WhatsAppSimulator() {
 
   // Toggle specific therapeutic interest tags
   const handleToggleInterestTag = async (tagLabel: string) => {
-    if (!activeChatId) return;
+    if (!activeChatId || !currentUser) return;
+    const activeChat = chats[activeChatId];
+    const cleanedJid = activeChatId.replace('@s.whatsapp.net', '').replace(/\D/g, '') + '@s.whatsapp.net';
+    
     try {
-      if (matchedPatient) {
-        // Toggle tag from current text list
-        const currentInterest = matchedPatient.interestedIn || '';
-        let updatedInterest = '';
-        if (currentInterest.includes(tagLabel)) {
-          // Remove tag
-          updatedInterest = currentInterest
-            .split(',')
-            .map(t => t.trim())
-            .filter(t => t && t !== tagLabel)
-            .join(', ');
-        } else {
-          // Add tag
-          updatedInterest = currentInterest 
-            ? `${currentInterest}, ${tagLabel}` 
-            : tagLabel;
-        }
+      // 1. Determine current and updated tags based on CRM or Chat data
+      const currentInterest = matchedPatient?.interestedIn || activeChat?.interestedIn || '';
+      let updatedInterest = '';
+      
+      if (currentInterest.includes(tagLabel)) {
+        // Remove tag
+        updatedInterest = currentInterest
+          .split(',')
+          .map(t => t.trim())
+          .filter(t => t && t !== tagLabel)
+          .join(', ');
+      } else {
+        // Add tag
+        updatedInterest = currentInterest 
+          ? `${currentInterest}, ${tagLabel}` 
+          : tagLabel;
+      }
 
+      // 2. Persist in WhatsApp Chat (for all contacts)
+      await setDoc(doc(db, 'whatsapp_chats', `${currentUser.uid}_${cleanedJid}`), {
+        interestedIn: updatedInterest,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // 3. Persist in CRM (if patient exists or auto-create)
+      if (matchedPatient) {
         await updateDoc(doc(db, 'pacientes', matchedPatient.id), {
           interestedIn: updatedInterest,
           lastContactAt: serverTimestamp()
@@ -860,7 +884,6 @@ export default function WhatsAppSimulator() {
       } else {
         // Auto create lead and add interest tag
         const phone = activeChatId.split('@')[0];
-        const activeChat = chats[activeChatId];
         const clinicId = clinics[0]?.id || '';
         const nameToUse = editingPatientName.trim() || activeChat?.name || `+${phone}`;
 
@@ -870,16 +893,16 @@ export default function WhatsAppSimulator() {
           phone: phone,
           telefone: phone,
           status: 'lead',
-          interestedIn: tagLabel,
+          interestedIn: updatedInterest,
           clinicId: clinicId,
           ownerId: currentUser?.uid || '',
-          source: getAutoChatSource(activeChatId),
+          source: (activeChat as any)?.source || getAutoChatSource(activeChatId),
           lastContactAt: serverTimestamp(),
           createdAt: serverTimestamp()
         });
       }
     } catch (e) {
-      console.error("Erro ao atualizar tags adicionais:", e);
+      console.error("Erro ao alternar tag de interesse:", e);
     }
   };
 
@@ -1271,7 +1294,7 @@ export default function WhatsAppSimulator() {
 
       // Filter by source (supporting WhatsApp channel)
       if (filterSource !== 'all') {
-        const autoSource = matchedPt ? getAutoSource(matchedPt) : getAutoChatSource(id);
+        const autoSource = matchedPt ? getAutoSource(matchedPt) : (chat.source || getAutoChatSource(id));
         const sourceMatch = (autoSource === filterSource || (filterSource === 'whatsapp_real' && autoSource === 'WhatsApp'));
         if (!sourceMatch) return false;
       }
@@ -1432,7 +1455,7 @@ export default function WhatsAppSimulator() {
                 crmStages.find(s => s.id === matchedPt.status || s.id.endsWith(`_${matchedPt.status}`) || matchedPt.status?.endsWith(`_${s.id}`)) ||
                 CRM_STAGES.find(s => s.id === matchedPt.status)
               ) : null;
-              const autoSource = matchedPt ? getAutoSource(matchedPt) : getAutoChatSource(id);
+              const autoSource = matchedPt ? getAutoSource(matchedPt) : (chat.source || getAutoChatSource(id));
 
               return (
                 <div 
@@ -1728,7 +1751,8 @@ export default function WhatsAppSimulator() {
                               { id: 'TikTok', label: 'TikTok', color: 'bg-neutral-100 text-neutral-800 border-neutral-200 hover:bg-neutral-200/50', activeColor: 'bg-black text-white border-transparent' },
                               { id: 'whatsapp_real', label: 'WhatsApp', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/50', activeColor: 'bg-[#25D366] text-white border-transparent' },
                             ].map((channel) => {
-                              const currentChannel = matchedPatient ? getAutoSource(matchedPatient) : getAutoChatSource(activeChatId || '');
+                              const activeChat = chats[activeChatId || ''];
+                              const currentChannel = matchedPatient ? getAutoSource(matchedPatient) : (activeChat?.source || getAutoChatSource(activeChatId || ''));
                               const isActive = (currentChannel === channel.id) || (channel.id === 'whatsapp_real' && currentChannel === 'WhatsApp');
                               
                               return (
@@ -1929,7 +1953,8 @@ export default function WhatsAppSimulator() {
                         ) : (
                           <div className="flex flex-wrap gap-1.5 overflow-hidden">
                             {dynamicTags.map((tag) => {
-                              const currentInterestList = matchedPatient?.interestedIn || '';
+                              const activeChat = chats[activeChatId || ''];
+                              const currentInterestList = matchedPatient?.interestedIn || activeChat?.interestedIn || '';
                               const isTagged = currentInterestList.split(',').map(t => t.trim()).includes(tag.label);
                               
                               return (

@@ -465,6 +465,7 @@ export default function PatientForm({ onSuccess, initialData }: { onSuccess?: ()
         const finalId = getPatientId({ id: initialData.id, ...formData });
         await updateDoc(doc(db, 'pacientes', initialData.id), {
           ...patientData,
+          ownerId: auth.currentUser?.uid || initialData.ownerId,
           numeroRegistro: finalId,
           updatedAt: new Date().toISOString()
         });

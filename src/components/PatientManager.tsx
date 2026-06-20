@@ -44,7 +44,11 @@ export default function PatientManager() {
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
-        const q = query(collection(db, 'pacientes'), orderBy('createdAt', 'desc'));
+        const q = query(
+          collection(db, 'pacientes'), 
+          where('ownerId', '==', user.uid),
+          orderBy('createdAt', 'desc')
+        );
         const unsubSnapshot = onSnapshot(q, (snapshot) => {
           setPatients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         });

@@ -198,6 +198,26 @@ CREATE TABLE IF NOT EXISTS deleted_chats (
     deleted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 13. AI CONNECTIONS (Conexões com IA)
+CREATE TABLE IF NOT EXISTS ai_connections (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider TEXT NOT NULL, -- 'google' | 'openai' | etc
+    api_key TEXT,
+    model TEXT,
+    status TEXT DEFAULT 'active',
+    owner_id TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 14. APP SETTINGS (Configurações Gerais - Key/Value)
+CREATE TABLE IF NOT EXISTS app_settings (
+    id TEXT PRIMARY KEY, -- ex: 'whatsapp_reminders'
+    owner_id TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- REGULAMENTAÇÃO DE POLÍTICAS DE RLS (Row Level Security) - OPCIONAL MAS RECOMENDADO
 -- Habilita RLS em todas as tabelas
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -213,6 +233,8 @@ ALTER TABLE response_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE whatsapp_chats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE whatsapp_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE deleted_chats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 
 -- Exemplo simples de regras de acesso (qualquer pessoa autenticada pode gerenciar seus próprios registros usando owner_id)
 -- Alinhamos owner_id com auth.uid() do Supabase Auth para controle rígido por usuário se desejado.
@@ -229,3 +251,5 @@ CREATE POLICY "Permitir tudo (Response Categories)" ON response_categories FOR A
 CREATE POLICY "Permitir tudo (WhatsApp Chats)" ON whatsapp_chats FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permitir tudo (WhatsApp Messages)" ON whatsapp_messages FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permitir tudo (Deleted Chats)" ON deleted_chats FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (AI Connections)" ON ai_connections FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir tudo (App Settings)" ON app_settings FOR ALL USING (true) WITH CHECK (true);

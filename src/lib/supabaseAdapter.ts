@@ -6,6 +6,16 @@ export function getSupabaseTable(firestoreCollection: string): string {
   const collectionName = firestoreCollection.split('/')[0];
   if (collectionName === 'agendamentos') return 'appointments';
   if (collectionName === 'pacientes') return 'pacientes';
+  if (collectionName === 'ai_connections') return 'ai_connections';
+  if (collectionName === 'app_settings') return 'app_settings';
+  if (collectionName === 'clinics') return 'clinics';
+  if (collectionName === 'dentists') return 'dentists';
+  if (collectionName === 'procedures') return 'procedures';
+  if (collectionName === 'specialties') return 'specialties';
+  if (collectionName === 'quick_responses') return 'quick_responses';
+  if (collectionName === 'response_categories') return 'response_categories';
+  if (collectionName === 'whatsapp_chats') return 'whatsapp_chats';
+  if (collectionName === 'whatsapp_messages') return 'whatsapp_messages';
   return collectionName;
 }
 
@@ -30,6 +40,7 @@ export function camelToSnakeField(field: string): string {
   if (field === 'lastMessageTime') return 'last_message_time';
   if (field === 'senderId') return 'sender_id';
   if (field === 'senderName') return 'sender_name';
+  if (field === 'apiKey') return 'api_key';
   return field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 }
 
@@ -797,12 +808,105 @@ function setAuthenticatedUser(user: User | null) {
     localStorage.setItem('supabase_mock_user', JSON.stringify(user));
     localStorage.setItem('google_demo_logged_in_v1', 'true');
     localStorage.setItem('google_access_token', 'demo-token');
+    // Acionar sincronização de dados legados ao logar
+    setTimeout(() => syncLegacyData(), 1000);
   } else {
     localStorage.removeItem('supabase_mock_user');
     localStorage.removeItem('google_demo_logged_in_v1');
     localStorage.removeItem('google_access_token');
   }
   authStateListeners.forEach(listener => listener(user));
+}
+
+// Function to sync legacy data from individual localStorage keys to the adapters/database
+export async function syncLegacyData() {
+  if (!currentUserInMock) return;
+  const uid = currentUserInMock.uid;
+
+  console.log('[SupabaseAdapter] Iniciando sincronização de dados legados e mock...');
+
+  // 1. CRM Stages
+  const legacyCrm = localStorage.getItem('wa_crm_funnel_stages');
+  if (legacyCrm) {
+    try {
+      const stages = JSON.parse(legacyCrm);
+      if (Array.isArray(stages)) {
+        for (const s of stages) {
+          await setDoc(doc(db, 'funnel_stages', s.id || Math.random().toString(36).substring(2, 11)), {
+            ...s,
+            ownerId: uid
+          }, { merge: true });
+        }
+      }
+    } catch (e) {
+      console.warn('[Sync] Falha ao sincronizar CRM:', e);
+    }
+  }
+
+  // 2. AI Connections
+  const legacyAI = localStorage.getItem('ai_connections_v1');
+  if (legacyAI) {
+    try {
+      const conns = JSON.parse(legacyAI);
+      if (Array.isArray(conns)) {
+        for (const c of conns) {
+          await setDoc(doc(db, 'ai_connections', c.id || Math.random().toString(36).substring(2, 11)), {
+            ...c,
+            ownerId: uid
+          }, { merge: true });
+        }
+      }
+    } catch (e) {
+      console.warn('[Sync] Falha ao sincronizar AI:', e);
+    }
+  }
+
+  // 3. App Settings (Lembretes WhatsApp)
+  const waRemEnabled = localStorage.getItem('whatsapp_reminders_enabled');
+  const waRemMins = localStorage.getItem('whatsapp_reminder_minutes');
+  const waTemplateLocal = localStorage.getItem('whatsapp_template_local');
+  
+  if (waRemEnabled !== null || waRemMins !== null || waTemplateLocal !== null) {
+     await setDoc(doc(db, 'app_settings', 'whatsapp_config'), {
+       ownerId: uid,
+       payload: {
+         enabled: waRemEnabled !== 'false',
+         minutes: parseInt(waRemMins || '1440', 10),
+         template: waTemplateLocal || ''
+       }
+     }, { merge: true });
+  }
+
+  // 4. Migração Genérica de Tabelas Mock (sb_mock_*)
+  const allTables = [
+    'pacientes', 'appointments', 'clinics', 'dentists', 
+    'procedures', 'specialties', 'quick_responses', 'response_categories'
+  ];
+
+  for (const table of allTables) {
+    const mockData = getMockStorage(table);
+    if (mockData.length > 0) {
+      console.log(`[Sync] Sincronizando ${mockData.length} registros da tabela mock: ${table}`);
+      for (const item of mockData) {
+        // Garantir ownerId correto e remover campos internos de mock
+        const { ...syncItem } = item;
+        const firestorePath = table === 'appointments' ? 'agendamentos' : table;
+        
+        try {
+          await setDoc(doc(db, firestorePath, item.id), {
+            ...syncItem,
+            ownerId: uid
+          }, { merge: true });
+        } catch (err) {
+          console.error(`[Sync] Erro ao sincronizar item ${item.id} na tabela ${table}:`, err);
+        }
+      }
+      // Limpar storage mock após sincronizar com sucesso
+      localStorage.removeItem(`sb_mock_${table}`);
+    }
+  }
+
+  console.log('[SupabaseAdapter] Sincronização de dados legados e mock concluída.');
 }
 
 // Google Auth Provider mock class
