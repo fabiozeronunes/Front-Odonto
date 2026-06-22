@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Database, Search, RefreshCw, AlertTriangle, CheckCircle, CloudDownload } from 'lucide-react';
+import { Database, Search, RefreshCw, AlertTriangle, CheckCircle, CloudDownload, Info } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { collection, getDocs, syncLegacyData, syncCloudToLocal } from '../lib/supabaseAdapter';
+import { SUPABASE_CONFIG } from '../lib/config';
 
 export const DataDiagnostic: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [supabaseStatus] = useState(SUPABASE_CONFIG);
 
   const runDiagnostic = async () => {
     setLoading(true);
@@ -108,6 +110,27 @@ export const DataDiagnostic: React.FC = () => {
       <div className={`mb-2 bg-white border border-neutral-200 rounded-xl shadow-lg transition-all transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-90 opacity-0 pointer-events-none'}`}>
         <div className="p-4 w-64 space-y-3">
           <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Painel de Dados</p>
+
+          <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-neutral-500 font-medium">Supabase Status:</span>
+              <div className="flex items-center gap-1">
+                <div className={`w-1.5 h-1.5 rounded-full ${supabaseStatus.isConfigured ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                <span className={`text-[10px] font-bold ${supabaseStatus.isConfigured ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {supabaseStatus.isConfigured ? 'Conectado' : 'Offline'}
+                </span>
+              </div>
+            </div>
+            
+            {!supabaseStatus.isConfigured && (
+              <div className="p-2 bg-amber-50 rounded border border-amber-100 flex gap-2">
+                <AlertTriangle size={12} className="text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-[9px] text-amber-800 leading-tight">
+                  Chaves ausentes. Configure em <span className="font-bold">Settings &gt; Secrets</span> do AI Studio.
+                </p>
+              </div>
+            )}
+          </div>
           
           <button 
             onClick={runDiagnostic}

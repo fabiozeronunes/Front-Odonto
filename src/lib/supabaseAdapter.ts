@@ -1057,6 +1057,12 @@ function setAuthenticatedUser(user: User | null) {
 
 // Function to sync legacy data from individual localStorage keys to the adapters/database
 export async function syncLegacyData() {
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.warn('[SupabaseAdapter] Sincronização cancelada: Supabase não está configurado.');
+    return;
+  }
+
   const user = currentUserInMock;
   if (!user) {
     console.log('[SupabaseAdapter] Sincronização adiada: nenhum usuário logado.');
@@ -1200,7 +1206,9 @@ export async function syncLegacyData() {
 export async function syncCloudToLocal() {
   const supabase = getSupabase() as any;
   if (!supabase) {
-    throw new Error('Supabase não configurado para realizar PULL de dados.');
+    const errorMsg = 'Configuração do Supabase ausente. Adicione as chaves em "Settings > Secrets" para permitir baixar dados da nuvem.';
+    console.error(`[SupabaseAdapter] ${errorMsg}`);
+    throw new Error(errorMsg);
   }
 
   console.log('[SupabaseAdapter] [Sync-Pull] Iniciando sincronização NUVEM -> LOCAL...');
