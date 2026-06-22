@@ -15,10 +15,26 @@ export function getSupabase() {
     }
 
     console.log('[Supabase] Inicializando cliente com as chaves de:', SUPABASE_CONFIG.source);
-    supabaseInstance = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+    supabaseInstance = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storageKey: 'sb-ais-auth-token'
+      }
+    });
     console.log('[Supabase] Cliente inicializado com sucesso.');
   }
   return supabaseInstance;
+}
+
+/**
+ * Reseta a instância do cliente Supabase. 
+ * Útil para forçar a reconexão quando as variáveis de ambiente são alteradas.
+ */
+export function resetSupabase() {
+  console.log('[Supabase] Resetando instância do cliente para nova tentativa...');
+  supabaseInstance = null;
 }
 
 export const supabase = getSupabase();
