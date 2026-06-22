@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Database, Search, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Database, Search, RefreshCw, AlertTriangle, CheckCircle, CloudDownload } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
-import { collection, getDocs, syncLegacyData } from '../lib/supabaseAdapter';
+import { collection, getDocs, syncLegacyData, syncCloudToLocal } from '../lib/supabaseAdapter';
 
 export const DataDiagnostic: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -88,6 +88,21 @@ export const DataDiagnostic: React.FC = () => {
     }
   };
 
+  const handlePullFromCloud = async () => {
+    if (confirm('Deseja baixar todos os dados da nuvem para atualizar seu ambiente local? Isso sobrescreverá dados locais com os dados online.')) {
+      setLoading(true);
+      try {
+        await syncCloudToLocal();
+        alert('Dados da nuvem baixados com sucesso! A página será recarregada para aplicar as mudanças.');
+        window.location.reload();
+      } catch (err: any) {
+        alert('Erro ao baixar dados: ' + err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   return (
     <div className="fixed bottom-4 right-4 z-50">
       <div className={`mb-2 bg-white border border-neutral-200 rounded-xl shadow-lg transition-all transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-90 opacity-0 pointer-events-none'}`}>
@@ -109,7 +124,16 @@ export const DataDiagnostic: React.FC = () => {
             className="w-full flex items-center gap-2 p-2 hover:bg-neutral-50 rounded-lg text-sm text-neutral-600 transition-colors"
           >
             <RefreshCw size={14} className={`text-emerald-500 ${loading ? 'animate-spin' : ''}`} />
-            <span>Forçar Sync Local</span>
+            <span>Subir dados para Nuvem</span>
+          </button>
+
+          <button 
+            onClick={handlePullFromCloud}
+            disabled={loading}
+            className="w-full flex items-center gap-2 p-2 hover:bg-neutral-50 rounded-lg text-sm text-neutral-600 transition-colors"
+          >
+            <CloudDownload size={14} className={`text-blue-500 ${loading ? 'animate-spin' : ''}`} />
+            <span>Baixar dados da Nuvem</span>
           </button>
 
           <div className="pt-2 border-t border-neutral-100">
@@ -123,7 +147,7 @@ export const DataDiagnostic: React.FC = () => {
         className="flex items-center gap-2 px-4 py-2 bg-neutral-900 shadow-xl rounded-full text-white text-xs font-semibold hover:bg-neutral-800 transition-all border border-neutral-700 active:scale-95"
       >
         <Database size={14} />
-        <span>Diagnosticador</span>
+        <span>Gestão de Dados</span>
       </button>
     </div>
   );

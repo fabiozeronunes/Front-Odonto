@@ -1193,6 +1193,45 @@ export async function syncLegacyData() {
   }
 }
 
+/**
+ * Realiza o processo inverso: baixa todos os dados da nuvem e atualiza a "rede local" (MockStorage).
+ * Útil para sincronizar ambientes de desenvolvimento com os dados reais de produção.
+ */
+export async function syncCloudToLocal() {
+  const supabase = getSupabase() as any;
+  if (!supabase) {
+    throw new Error('Supabase não configurado para realizar PULL de dados.');
+  }
+
+  console.log('[SupabaseAdapter] [Sync-Pull] Iniciando sincronização NUVEM -> LOCAL...');
+
+  const tables = [
+    'pacientes', 'clinics', 'dentists', 'agendamentos', 
+    'procedures', 'specialties', 'quick_responses', 
+    'funnel_stages', 'ai_connections', 'users'
+  ];
+
+  for (const table of tables) {
+    try {
+      const { data, error } = await supabase.from(table).select('*');
+      if (error) {
+        console.warn(`[Sync-Pull] Erro ao baixar tabela ${table}:`, error.message);
+        continue;
+      }
+      
+      if (data && data.length > 0) {
+        const camelData = snakeToCamel(data);
+        console.log(`[Sync-Pull] Atualizando local sb_mock_${table} com ${data.length} itens da nuvem.`);
+        saveMockStorage(table, camelData);
+      }
+    } catch (err) {
+      console.error(`[Sync-Pull] Falha crítica na sincronização da tabela ${table}:`, err);
+    }
+  }
+
+  console.log('[SupabaseAdapter] [Sync-Pull] Sincronização concluída com sucesso.');
+}
+
 // Google Auth Provider mock class
 export class GoogleAuthProvider {
   static credentialFromResult(result: any) {
