@@ -1578,6 +1578,11 @@ async function setupVite() {
             VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
           };
           
+          console.log('[Server] Injected Supabase Config:', {
+            url: config.VITE_SUPABASE_URL ? 'PRESENT' : 'MISSING',
+            key: config.VITE_SUPABASE_ANON_KEY ? 'PRESENT' : 'MISSING'
+          });
+          
           const scriptTag = `<script>window.ENV_CONFIG = ${JSON.stringify(config)};</script>`;
           html = html.replace('<head>', `<head>${scriptTag}`);
           
