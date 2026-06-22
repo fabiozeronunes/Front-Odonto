@@ -48,7 +48,7 @@ export const DataDiagnostic: React.FC = () => {
 
       // 3. Check Remote Supabase State
       console.log('3. Remote Supabase Check (Sample Tables):');
-      const remoteTables = ['pacientes', 'agendamentos', 'funnel_stages', 'ai_connections'];
+      const remoteTables = ['pacientes', 'agendamentos', 'funnel_stages', 'ai_connections', 'users'];
       
       for (const table of remoteTables) {
         try {
@@ -56,7 +56,7 @@ export const DataDiagnostic: React.FC = () => {
           console.log(`   - Remote ${table}: Found ${snap.docs.length} items`);
           if (snap.docs.length > 0) {
             const first = snap.docs[0].data();
-            console.log(`     (Sample from ${table}: ownerId=${first.ownerId || 'MISSING'})`);
+            console.log(`     (Sample from ${table}: ownerId=${first.ownerId || first.id || 'MISSING'})`);
           }
         } catch (err: any) {
           console.error(`   - Remote ${table}: Error fetching: ${err.message}`);
@@ -89,8 +89,8 @@ export const DataDiagnostic: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-4 left-4 z-50">
-      <div className={`mb-2 bg-white border border-neutral-200 rounded-xl shadow-lg transition-all transform ${isOpen ? 'scale-100 opacity-100' : 'scale-90 opacity-0 pointer-events-none'}`}>
+    <div className="fixed bottom-4 right-4 z-50">
+      <div className={`mb-2 bg-white border border-neutral-200 rounded-xl shadow-lg transition-all transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-90 opacity-0 pointer-events-none'}`}>
         <div className="p-4 w-64 space-y-3">
           <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Painel de Dados</p>
           

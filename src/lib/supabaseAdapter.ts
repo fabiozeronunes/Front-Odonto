@@ -16,6 +16,7 @@ export function getSupabaseTable(firestoreCollection: string): string {
   if (collectionName === 'response_categories') return 'response_categories';
   if (collectionName === 'whatsapp_chats') return 'whatsapp_chats';
   if (collectionName === 'whatsapp_messages') return 'whatsapp_messages';
+  if (collectionName === 'users') return 'users';
   return collectionName;
 }
 
@@ -606,7 +607,7 @@ export async function setDoc(docRef: any, data: any, options?: any) {
 
   const { error } = await supabase
     .from(table)
-    .upsert(pgData, { onConflict: table === 'users' ? 'email' : 'id' });
+    .upsert(pgData, { onConflict: 'id' });
 
   if (error) {
     console.error(`[SupabaseAdapter] Erro ao upsert na tabela ${table}:`, error);
@@ -746,6 +747,34 @@ export async function getDoc(docRef: any) {
   }
 
   if (error) {
+    if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
+      console.error(`[SupabaseAdapter] CRITICAL: Table "${table}" does not exist in Supabase!`);
+      if (table === 'users') {
+        console.warn(`[SupabaseAdapter] Please run this SQL in your Supabase SQL Editor:
+        
+        CREATE TABLE IF NOT EXISTS users (
+          id UUID PRIMARY KEY,
+          owner_id UUID REFERENCES auth.users(id),
+          email TEXT UNIQUE,
+          nome TEXT,
+          cpf TEXT,
+          whatsapp TEXT,
+          data_nascimento DATE,
+          endereco TEXT,
+          bairro TEXT,
+          cidade TEXT,
+          estado TEXT,
+          data_cadastro TEXT,
+          avatar_url TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        
+        ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Users can manage their own data" ON users FOR ALL USING (auth.uid() = id);
+        `);
+      }
+    }
     console.error(`[SupabaseAdapter] Erro ao buscar registro na tabela ${table} com ID ${id}:`, error);
     throw error;
   }
@@ -951,6 +980,12 @@ function getSavedUser(): User | null {
 
 let currentUserInMock: User | null = getSavedUser();
 
+// Sincronização imediata na inicialização se já houver um usuário salvo
+if (currentUserInMock) {
+  console.log('[SupabaseAdapter] Usuário detectado na inicialização. Agendando sincronização de dados...');
+  setTimeout(() => syncLegacyData(), 1500);
+}
+
 // Inicialização do listener real do Supabase caso configurado
 const sb = getSupabase();
 if (sb) {
@@ -1029,115 +1064,133 @@ export async function syncLegacyData() {
   }
   const uid = user.uid;
 
-  console.log('[SupabaseAdapter] Iniciando verificação de dados locais para migração ao Supabase...');
+  // Evita múltiplas execuções simultâneas
+  const syncKey = `sb_sync_in_progress_${uid}`;
+  if (sessionStorage.getItem(syncKey)) return;
+  sessionStorage.setItem(syncKey, 'true');
 
-  // 1. CRM Stages
-  const legacyCrm = localStorage.getItem('wa_crm_funnel_stages');
-  if (legacyCrm && legacyCrm !== 'undefined' && legacyCrm !== 'null') {
-    try {
-      const stages = JSON.parse(legacyCrm);
-      if (Array.isArray(stages) && stages.length > 0) {
-        console.log(`[Sync] Migrando ${stages.length} estágios do funil...`);
-        for (const s of stages) {
-          await setDoc(doc(db, 'funnel_stages', s.id || Math.random().toString(36).substring(2, 11)), {
-            ...s,
-            ownerId: uid
-          }, { merge: true });
+  console.log('[SupabaseAdapter] [Sync] Iniciando varredura completa de dados locais para migração...');
+
+  try {
+    // 1. CRM Stages
+    const legacyCrm = localStorage.getItem('wa_crm_funnel_stages');
+    if (legacyCrm && legacyCrm !== 'undefined' && legacyCrm !== 'null' && legacyCrm !== '[]') {
+      try {
+        const stages = JSON.parse(legacyCrm);
+        if (Array.isArray(stages) && stages.length > 0) {
+          console.log(`[Sync] Migrando ${stages.length} estágios do funil...`);
+          for (const s of stages) {
+            await setDoc(doc(db, 'funnel_stages', s.id || Math.random().toString(36).substring(2, 11)), {
+              ...s,
+              ownerId: uid
+            }, { merge: true });
+          }
+          localStorage.removeItem('wa_crm_funnel_stages');
         }
-        localStorage.removeItem('wa_crm_funnel_stages');
+      } catch (e) {
+        console.warn('[Sync] Falha ao sincronizar CRM:', e);
       }
-    } catch (e) {
-      console.warn('[Sync] Falha ao sincronizar CRM:', e);
     }
-  }
 
-  // 2. AI Connections
-  const legacyAI = localStorage.getItem('ai_connections_v1');
-  if (legacyAI && legacyAI !== 'undefined' && legacyAI !== 'null') {
-    try {
-      const conns = JSON.parse(legacyAI);
-      if (Array.isArray(conns) && conns.length > 0) {
-        console.log(`[Sync] Migrando ${conns.length} conexões de IA...`);
-        for (const c of conns) {
-          await setDoc(doc(db, 'ai_connections', c.id || Math.random().toString(36).substring(2, 11)), {
-            ...c,
-            ownerId: uid
-          }, { merge: true });
+    // 2. AI Connections
+    const legacyAI = localStorage.getItem('ai_connections_v1');
+    if (legacyAI && legacyAI !== 'undefined' && legacyAI !== 'null' && legacyAI !== '[]') {
+      try {
+        const conns = JSON.parse(legacyAI);
+        if (Array.isArray(conns) && conns.length > 0) {
+          console.log(`[Sync] Migrando ${conns.length} conexões de IA...`);
+          for (const c of conns) {
+            await setDoc(doc(db, 'ai_connections', c.id || Math.random().toString(36).substring(2, 11)), {
+              ...c,
+              ownerId: uid
+            }, { merge: true });
+          }
+          localStorage.removeItem('ai_connections_v1');
         }
-        localStorage.removeItem('ai_connections_v1');
+      } catch (e) {
+        console.warn('[Sync] Falha ao sincronizar AI:', e);
       }
-    } catch (e) {
-      console.warn('[Sync] Falha ao sincronizar AI:', e);
     }
-  }
 
-  // 3. App Settings (Lembretes WhatsApp)
-  const waRemEnabled = localStorage.getItem('whatsapp_reminders_enabled');
-  const waRemMins = localStorage.getItem('whatsapp_reminder_minutes');
-  const waTemplateLocal = localStorage.getItem('whatsapp_template_local');
-  
-  if (waRemEnabled !== null || waRemMins !== null || waTemplateLocal !== null) {
-     console.log('[Sync] Migrando configurações de lembretes...');
-     await setDoc(doc(db, 'app_settings', 'whatsapp_config'), {
-       ownerId: uid,
-       payload: {
-         enabled: waRemEnabled !== 'false',
-         minutes: parseInt(waRemMins || '1440', 10),
-         template: waTemplateLocal || ''
-       }
-     }, { merge: true });
-     localStorage.removeItem('whatsapp_reminders_enabled');
-     localStorage.removeItem('whatsapp_reminder_minutes');
-     localStorage.removeItem('whatsapp_template_local');
-  }
-
-  // 4. Migração Genérica de Tabelas Mock (sb_mock_*) E Tabelas Brutas (sem prefixo)
-  const allTables = [
-    'pacientes', 'appointments', 'clinics', 'dentists', 
-    'procedures', 'specialties', 'quick_responses', 'response_categories',
-    'whatsapp_chats', 'whatsapp_messages'
-  ];
-
-  for (const table of allTables) {
-    // Tenta primeiro o prefixo mock novo
-    let localData = getMockStorage(table);
+    // 3. App Settings (Lembretes WhatsApp)
+    const waRemEnabled = localStorage.getItem('whatsapp_reminders_enabled');
+    const waRemMins = localStorage.getItem('whatsapp_reminder_minutes');
+    const waTemplateLocal = localStorage.getItem('whatsapp_template_local');
     
-    // Se não tiver nada no mock, tenta a chave bruta (legado antigo)
-    if (localData.length === 0) {
-      const rawSaved = localStorage.getItem(table);
-      if (rawSaved && rawSaved !== 'undefined' && rawSaved !== 'null') {
-        try {
-          const parsed = JSON.parse(rawSaved);
-          if (Array.isArray(parsed)) localData = parsed;
-        } catch (e) {}
-      }
+    if (waRemEnabled !== null || waRemMins !== null || waTemplateLocal !== null) {
+       console.log('[Sync] Migrando configurações de lembretes...');
+       await setDoc(doc(db, 'app_settings', 'whatsapp_config'), {
+         ownerId: uid,
+         payload: {
+           enabled: waRemEnabled !== 'false',
+           minutes: parseInt(waRemMins || '1440', 10),
+           template: waTemplateLocal || ''
+         }
+       }, { merge: true });
+       localStorage.removeItem('whatsapp_reminders_enabled');
+       localStorage.removeItem('whatsapp_reminder_minutes');
+       localStorage.removeItem('whatsapp_template_local');
     }
 
-    if (localData.length > 0) {
-      console.log(`[Sync] Sincronizando ${localData.length} registros para tabela: ${table}`);
-      for (const item of localData) {
-        // Garantir ID
-        const finalId = item.id || Math.random().toString(36).substring(2, 11);
-        const { ...syncItem } = item;
-        const firestorePath = table === 'appointments' ? 'agendamentos' : table;
+    // 4. Migração Genérica de Tabelas Mock (sb_mock_*) E Tabelas Brutas (variantes PT/EN)
+    const tableMappings = [
+      { local: 'pacientes', remote: 'pacientes' },
+      { local: 'patients', remote: 'pacientes' },
+      { local: 'prontuarios', remote: 'pacientes' },
+      { local: 'clinics', remote: 'clinics' },
+      { local: 'clinicas', remote: 'clinics' },
+      { local: 'dentists', remote: 'dentists' },
+      { local: 'dentistas', remote: 'dentists' },
+      { local: 'appointments', remote: 'agendamentos' },
+      { local: 'agendamentos', remote: 'agendamentos' },
+      { local: 'procedures', remote: 'procedures' },
+      { local: 'procedimentos', remote: 'procedures' },
+      { local: 'specialties', remote: 'specialties' },
+      { local: 'especialidades', remote: 'specialties' },
+      { local: 'quick_responses', remote: 'quick_responses' },
+      { local: 'response_categories', remote: 'response_categories' },
+      { local: 'whatsapp_chats', remote: 'whatsapp_chats' },
+      { local: 'whatsapp_messages', remote: 'whatsapp_messages' }
+    ];
+
+    for (const mapping of tableMappings) {
+      const { local, remote } = mapping;
+      
+      // Tenta varrer: sb_mock_TABLE e TABLE (bruto legado)
+      const storageKeys = [`sb_mock_${local}`, local];
+      
+      for (const key of storageKeys) {
+        const raw = localStorage.getItem(key);
+        if (!raw || raw === 'undefined' || raw === 'null' || raw === '[]') continue;
         
         try {
-          await setDoc(doc(db, firestorePath, finalId), {
-            ...syncItem,
-            ownerId: uid,
-            updatedAt: syncItem.updatedAt || new Date().toISOString()
-          }, { merge: true });
-        } catch (err) {
-          console.error(`[Sync] Erro ao sincronizar item ${finalId} na tabela ${table}:`, err);
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            console.log(`[Sync] Migrando ${parsed.length} itens de "${key}" para "${remote}"...`);
+            
+            for (const item of parsed) {
+              const finalId = item.id || Math.random().toString(36).substring(2, 11);
+              await setDoc(doc(db, remote, finalId), {
+                ...item,
+                ownerId: uid,
+                updatedAt: item.updatedAt || item.created_at || new Date().toISOString()
+              }, { merge: true });
+            }
+            // Sucesso! Remove apenas se conseguirmos processar
+            localStorage.removeItem(key);
+          }
+        } catch (e) {
+          console.warn(`[Sync] Erro na tabela ${key}:`, e);
         }
       }
-      // Limpar os storages locais após migrar
-      localStorage.removeItem(`sb_mock_${table}`);
-      localStorage.removeItem(table);
     }
-  }
 
-  console.log('[SupabaseAdapter] Processo de migração finalizado.');
+    console.log('[SupabaseAdapter] [Sync] Sincronização finalizada com sucesso.');
+  } catch (err) {
+    console.error('[SupabaseAdapter] [Sync] Erro fatal durante a sincronização:', err);
+  } finally {
+    sessionStorage.removeItem(syncKey);
+  }
 }
 
 // Google Auth Provider mock class

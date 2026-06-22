@@ -74,12 +74,45 @@ export default function App() {
   const [isSpecialtiesExpanded, setIsSpecialtiesExpanded] = useState(false);
   const [dbVersion, setDbVersion] = useState<string | null>(null);
 
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      setUser(null);
+      setView('landing');
+      localStorage.removeItem('logged_in_view');
+    } catch (error) {
+      console.error('Erro ao sair:', error);
+      setUser(null);
+      setView('landing');
+    }
+  };
+
   // Diagnóstico inicial do Supabase
   useEffect(() => {
     validateSupabaseConnection().then(result => {
       console.log('[App] Supabase Connection Diagnostic Result:', result);
     });
   }, []);
+
+  // User Profile Listener - Mantém o nome do usuário sincronizado com o banco
+  useEffect(() => {
+    if (!user || user.uid === 'loading') return;
+    
+    const userDocRef = doc(db, 'users', user.uid);
+    console.log('[App] Iniciando listener de perfil para:', user.uid);
+    
+    const unsubscribe = onSnapshot(userDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.nome && data.nome !== user.displayName) {
+          console.log('[App] Perfil atualizado no banco, sincronizando UI:', data.nome);
+          setUser(prev => prev ? { ...prev, displayName: data.nome } : null);
+        }
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [user?.uid]);
 
   // Sync version checker
   useEffect(() => {
@@ -604,15 +637,7 @@ export default function App() {
               </div>
             )}
             {(isSidebarOpen || window.innerWidth < 1024) && (
-              <button onClick={() => {
-                localStorage.removeItem('google_demo_logged_in_v1');
-                localStorage.removeItem('google_access_token');
-                localStorage.removeItem('supabase_mock_user');
-                localStorage.removeItem('logged_in_view');
-                setUser(null);
-                setView('landing');
-                auth.signOut().catch(() => {});
-              }} className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors">
+              <button onClick={handleLogout} className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors">
                 <LogOut size={18} />
               </button>
             )}

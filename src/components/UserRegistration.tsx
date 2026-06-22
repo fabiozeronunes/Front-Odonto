@@ -28,32 +28,45 @@ export default function UserRegistration({ onComplete }: UserRegistrationProps) 
   useEffect(() => {
     const fetchInitialData = async () => {
       if (auth.currentUser) {
+        const uid = auth.currentUser.uid;
+        console.log('[UserRegistration] Buscando dados para UID:', uid);
+        
         try {
-          const userDocRef = doc(db, 'users', auth.currentUser.uid);
+          // 1. Tentar carregar do banco de dados (Supabase)
+          const userDocRef = doc(db, 'users', uid);
           const userDocSnap = await robustGetDoc(userDocRef);
           
+          let data: any = null;
+          
           if (userDocSnap.exists()) {
-            const data = userDocSnap.data();
-            console.log('[UserRegistration] Dados carregados do snapshot:', data);
-            setUserData(prev => {
-              const newData = {
-                ...prev,
-                nome: data.nome || prev.nome || auth.currentUser?.displayName || '',
-                email: data.email || prev.email || auth.currentUser?.email || '',
-                cpf: data.cpf || prev.cpf || '',
-                whatsapp: data.whatsapp || prev.whatsapp || '',
-                dataNascimento: data.dataNascimento || prev.dataNascimento || '',
-                endereco: data.endereco || prev.endereco || '',
-                bairro: data.bairro || prev.bairro || '',
-                cidade: data.cidade || prev.cidade || '',
-                estado: data.estado || prev.estado || 'SP',
-                dataCadastro: data.dataCadastro || (data.createdAt ? new Date(data.createdAt).toLocaleDateString('pt-BR') : prev.dataCadastro)
-              };
-              console.log('[UserRegistration] Novo estado userData:', newData);
-              return newData;
-            });
+            data = userDocSnap.data();
+            console.log('[UserRegistration] Dados carregados do banco:', data);
           } else {
-            console.log('[UserRegistration] Nenhum dado prévio encontrado para este UID:', auth.currentUser.uid);
+            console.log('[UserRegistration] Nenhum dado no banco, tentando cache local...');
+            // 2. Tentar carregar do cache local (localStorage fallback)
+            const cached = localStorage.getItem(`user_profile_${uid}`);
+            if (cached) {
+              data = JSON.parse(cached);
+              console.log('[UserRegistration] Dados carregados do cache local:', data);
+            }
+          }
+          
+          if (data) {
+            setUserData(prev => ({
+              ...prev,
+              nome: data.nome || prev.nome || auth.currentUser?.displayName || '',
+              email: data.email || prev.email || auth.currentUser?.email || '',
+              cpf: data.cpf || prev.cpf || '',
+              whatsapp: data.whatsapp || prev.whatsapp || '',
+              dataNascimento: data.dataNascimento || prev.dataNascimento || '',
+              endereco: data.endereco || prev.endereco || '',
+              bairro: data.bairro || prev.bairro || '',
+              cidade: data.cidade || prev.cidade || '',
+              estado: data.estado || prev.estado || 'SP',
+              dataCadastro: data.dataCadastro || (data.createdAt ? new Date(data.createdAt).toLocaleDateString('pt-BR') : prev.dataCadastro)
+            }));
+          } else {
+            console.log('[UserRegistration] Iniciando com dados básicos do Auth');
             setUserData(prev => ({
               ...prev,
               nome: auth.currentUser?.displayName || '',
@@ -77,19 +90,25 @@ export default function UserRegistration({ onComplete }: UserRegistrationProps) 
     }
 
     setLoading(true);
-    console.log('[UserRegistration] Iniciando salvamento...', userData);
+    const uid = auth.currentUser.uid;
+    console.log('[UserRegistration] Salvando dados para:', uid, userData);
     
     try {
-      const userDocRef = doc(db, 'users', auth.currentUser.uid);
       const payload = {
         ...userData,
-        id: auth.currentUser.uid,
-        ownerId: auth.currentUser.uid,
+        id: uid,
+        ownerId: uid,
         updatedAt: new Date().toISOString()
       };
       
+      // 1. Salvar no Banco (Supabase via Adapter)
+      const userDocRef = doc(db, 'users', uid);
       await robustSetDoc(userDocRef, payload);
-      console.log('[UserRegistration] Sucesso ao salvar no banco');
+      
+      // 2. Salvar no Cache Local (Backup)
+      localStorage.setItem(`user_profile_${uid}`, JSON.stringify(payload));
+      
+      console.log('[UserRegistration] Sucesso total ao salvar');
       
       setSaveSuccess(true);
       setTimeout(() => {
@@ -97,7 +116,7 @@ export default function UserRegistration({ onComplete }: UserRegistrationProps) 
         onComplete();
       }, 1500);
     } catch (error: any) {
-      console.error('[UserRegistration] FALHA CRÍTICA ao salvar:', error);
+      console.error('[UserRegistration] Erro ao salvar:', error);
       alert(`Erro ao salvar os dados: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setLoading(false);
