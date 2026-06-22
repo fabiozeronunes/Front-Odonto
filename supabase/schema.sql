@@ -238,18 +238,47 @@ ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 
 -- Exemplo simples de regras de acesso (qualquer pessoa autenticada pode gerenciar seus próprios registros usando owner_id)
 -- Alinhamos owner_id com auth.uid() do Supabase Auth para controle rígido por usuário se desejado.
+DROP POLICY IF EXISTS "Permitir tudo (Users)" ON users;
 CREATE POLICY "Permitir tudo (Users)" ON users FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Clinics)" ON clinics;
 CREATE POLICY "Permitir tudo (Clinics)" ON clinics FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Dentists)" ON dentists;
 CREATE POLICY "Permitir tudo (Dentists)" ON dentists FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Pacientes)" ON pacientes;
 CREATE POLICY "Permitir tudo (Pacientes)" ON pacientes FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Appointments)" ON appointments;
 CREATE POLICY "Permitir tudo (Appointments)" ON appointments FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Procedures)" ON procedures;
 CREATE POLICY "Permitir tudo (Procedures)" ON procedures FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Specialties)" ON specialties;
 CREATE POLICY "Permitir tudo (Specialties)" ON specialties FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Funnel Stages)" ON funnel_stages;
 CREATE POLICY "Permitir tudo (Funnel Stages)" ON funnel_stages FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Quick Responses)" ON quick_responses;
 CREATE POLICY "Permitir tudo (Quick Responses)" ON quick_responses FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Response Categories)" ON response_categories;
 CREATE POLICY "Permitir tudo (Response Categories)" ON response_categories FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (WhatsApp Chats)" ON whatsapp_chats;
 CREATE POLICY "Permitir tudo (WhatsApp Chats)" ON whatsapp_chats FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (WhatsApp Messages)" ON whatsapp_messages;
 CREATE POLICY "Permitir tudo (WhatsApp Messages)" ON whatsapp_messages FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (Deleted Chats)" ON deleted_chats;
 CREATE POLICY "Permitir tudo (Deleted Chats)" ON deleted_chats FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (AI Connections)" ON ai_connections;
 CREATE POLICY "Permitir tudo (AI Connections)" ON ai_connections FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir tudo (App Settings)" ON app_settings;
 CREATE POLICY "Permitir tudo (App Settings)" ON app_settings FOR ALL USING (true) WITH CHECK (true);
