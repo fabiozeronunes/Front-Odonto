@@ -1567,7 +1567,28 @@ async function setupVite() {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      try {
+        const indexPath = path.join(distPath, 'index.html');
+        if (fs.existsSync(indexPath)) {
+          let html = fs.readFileSync(indexPath, 'utf-8');
+          
+          // Injetar variáveis de ambiente públicas no HTML
+          const config = {
+            VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
+            VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
+          };
+          
+          const scriptTag = `<script>window.ENV_CONFIG = ${JSON.stringify(config)};</script>`;
+          html = html.replace('<head>', `<head>${scriptTag}`);
+          
+          res.send(html);
+        } else {
+          res.sendFile(indexPath);
+        }
+      } catch (e) {
+        console.error("Error injecting ENV_CONFIG:", e);
+        res.sendFile(path.join(distPath, 'index.html'));
+      }
     });
   }
 }

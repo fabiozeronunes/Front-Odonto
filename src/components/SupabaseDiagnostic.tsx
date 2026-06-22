@@ -12,7 +12,9 @@ export const SupabaseDiagnostic: React.FC = () => {
   useEffect(() => {
     // Get config info
     const metaEnv = (import.meta as any).env || {};
-    setSupabaseUrl(metaEnv.VITE_SUPABASE_URL || 'NÃO CONFIGURADO');
+    const envConfig = (window as any).ENV_CONFIG || {};
+    const url = envConfig.VITE_SUPABASE_URL || metaEnv.VITE_SUPABASE_URL || 'NÃO CONFIGURADO';
+    setSupabaseUrl(url);
 
     const checkAuth = async () => {
       const supabase = getSupabase();
