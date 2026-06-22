@@ -30,15 +30,25 @@ function getSafeEnv() {
     url,
     anonKey,
     isConfigured: !!(url && anonKey && url.startsWith('http')),
-    source
+    source,
+    debug: {
+      hasUrl: !!url,
+      hasKey: !!anonKey,
+      urlLength: url.length,
+      injectEnvPresent: !!(window as any).ENV_CONFIG,
+      metaEnvPresent: !!(import.meta as any).env?.VITE_SUPABASE_URL
+    }
   };
 }
 
-export const SUPABASE_CONFIG: SupabaseConfig = getSafeEnv();
+export const SUPABASE_CONFIG = getSafeEnv();
 
 if (!SUPABASE_CONFIG.isConfigured) {
   console.error(
-    ' [CONFIG ERROR] Supabase credentials not found. ' +
-    'Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment.'
+    ' [SUPABASE CONFIG ERROR] Variáveis VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY não encontradas. ' +
+    'Certifique-se de adicioná-las no menu "Settings > Secrets" do AI Studio ou no seu arquivo .env.'
   );
+  console.log('Diagnostic info:', SUPABASE_CONFIG.debug);
+} else {
+  console.log(`[Supabase Config] Carregado via: ${SUPABASE_CONFIG.source}`);
 }

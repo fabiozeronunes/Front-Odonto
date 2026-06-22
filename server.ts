@@ -36,6 +36,12 @@ function getSupabaseClient() {
   return supabaseClient;
 }
 
+console.log('--- SERVER RESTART ---');
+console.log('[Env Boot] Credenciais Detectadas:', {
+  VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ? 'OK' : (process.env.SUPABASE_URL ? 'FALLBACK OK' : 'MISSING'),
+  VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ? 'OK' : (process.env.SUPABASE_ANON_KEY ? 'FALLBACK OK' : 'MISSING'),
+});
+
 const app = express();
 const PORT = 3000;
 const server = http.createServer(app);
@@ -1557,11 +1563,39 @@ REQUISITOS DE SAÍDA:
 
 // Vite middleware for development
 async function setupVite() {
+  const config = {
+    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
+    VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
+  };
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
+
+    // Injetar variáveis no HTML durante o desenvolvimento
+    app.use(async (req, res, next) => {
+      // Somente para requisições de página principal
+      const isHtmlRequest = req.url === '/' || req.url?.endsWith('.html') || (!req.url?.includes('.') && req.headers.accept?.includes('text/html'));
+      
+      if (isHtmlRequest) {
+        try {
+          const indexFile = path.resolve(process.cwd(), 'index.html');
+          let html = fs.readFileSync(indexFile, 'utf-8');
+          html = await vite.transformIndexHtml(req.url || '/', html);
+          
+          const scriptTag = `<script>window.ENV_CONFIG = ${JSON.stringify(config)};</script>`;
+          html = html.replace('<head>', `<head>${scriptTag}`);
+          
+          return res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        } catch (e: any) {
+          console.error('[Server] Vite Transfrom Error:', e.message);
+        }
+      }
+      next();
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
@@ -1572,13 +1606,7 @@ async function setupVite() {
         if (fs.existsSync(indexPath)) {
           let html = fs.readFileSync(indexPath, 'utf-8');
           
-          // Injetar variáveis de ambiente públicas no HTML
-          const config = {
-            VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
-            VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
-          };
-          
-          console.log('[Server] Injected Supabase Config:', {
+          console.log('[Server] Injected Supabase Config (Prod):', {
             url: config.VITE_SUPABASE_URL ? 'PRESENT' : 'MISSING',
             key: config.VITE_SUPABASE_ANON_KEY ? 'PRESENT' : 'MISSING'
           });
