@@ -4,6 +4,30 @@
  * Valida a presença de variáveis obrigatórias e fornece acesso unificado.
  */
 
+// Patch preventivo para evitar erros fatais de JSON.parse("undefined") vindo de bibliotecas ou cache corrompido
+if (typeof window !== 'undefined') {
+  const originalJSONParse = JSON.parse;
+  JSON.parse = function(text, reviver) {
+    if (text === 'undefined') {
+      console.warn('[Config] Detectado JSON.parse("undefined"). Retornando null para evitar quebra.');
+      return null;
+    }
+    return originalJSONParse.call(JSON, text, reviver);
+  };
+
+  // Limpeza de itens conhecidos por causarem problemas se estiverem como string "undefined"
+  ['sb-ais-auth-token', 'supabase_mock_user', 'wa_crm_funnel_stages', 'sb_prod_cache_users'].forEach(key => {
+    try {
+      if (localStorage.getItem(key) === 'undefined') {
+        console.log(`[Config] Limpando chave corrompida no localStorage: ${key}`);
+        localStorage.removeItem(key);
+      }
+    } catch (e) {
+      // Ignora erros de acesso ao localStorage (ex: modo privado)
+    }
+  });
+}
+
 interface SupabaseConfig {
   url: string;
   anonKey: string;
