@@ -139,6 +139,76 @@ export function adaptOutputData(table: string, data: any): any {
 // Virtual storage for system collection
 export const virtualSystemStore: Record<string, any> = {};
 
+// LocalStorage Persistence for Production Data Cache
+function getSupabaseCache(table: string): any[] {
+  if (typeof window === 'undefined') return [];
+  const key = `sb_prod_cache_${table}`;
+  const saved = localStorage.getItem(key);
+  if (!saved || saved === 'undefined' || saved === 'null') return [];
+  try {
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function setSupabaseCache(table: string, data: any[]) {
+  if (typeof window === 'undefined') return;
+  const key = `sb_prod_cache_${table}`;
+  try {
+    // Limitamos o cache aos últimos 500 registros para evitar estourar o localStorage
+    localStorage.setItem(key, JSON.stringify(data.slice(0, 500)));
+  } catch (e) {
+    console.warn(`[Supabase Cache] Error saving cache for ${table}:`, e);
+  }
+}
+
+// Helper: Aplica filtros básicos localmente em arrays (usado por Mock e Cache)
+function applyLocalFilters(data: any[], queryRef: any): any[] {
+  if (!queryRef || queryRef.type !== 'query' || !queryRef.filters) return data;
+  
+  let filtered = [...data];
+  const filters = queryRef.filters;
+
+  for (const filter of filters) {
+    if (!filter) continue;
+    if (filter.type === 'where') {
+      const field = filter.field;
+      const val = filter.value;
+      const op = filter.op;
+      
+      switch (op) {
+        case '==': filtered = filtered.filter(item => item[field] === val); break;
+        case '!=': filtered = filtered.filter(item => item[field] !== val); break;
+        case '>':  filtered = filtered.filter(item => item[field] > val); break;
+        case '>=': filtered = filtered.filter(item => item[field] >= val); break;
+        case '<':  filtered = filtered.filter(item => item[field] < val); break;
+        case '<+': filtered = filtered.filter(item => item[field] <= val); break;
+        case 'array-contains': 
+          filtered = filtered.filter(item => Array.isArray(item[field]) && item[field].includes(val)); 
+          break;
+        case 'in':
+          filtered = filtered.filter(item => Array.isArray(val) && val.includes(item[field]));
+          break;
+      }
+    } else if (filter.type === 'orderBy') {
+      const field = filter.field;
+      const desc = filter.direction === 'desc';
+      filtered.sort((a, b) => {
+        const valA = a[field];
+        const valB = b[field];
+        if (valA < valB) return desc ? 1 : -1;
+        if (valA > valB) return desc ? -1 : 1;
+        return 0;
+      });
+    } else if (filter.type === 'limit') {
+      filtered = filtered.slice(0, filter.value);
+    }
+  }
+  return filtered;
+}
+
 // LocalStorage Persistence Fallback for when Supabase keys are missing
 function getMockStorage(table: string): any[] {
   if (typeof window === 'undefined') return [];
@@ -229,6 +299,59 @@ interface ActiveListener {
   onError?: (error: any) => void;
 }
 
+/**
+ * Valida explicitamente a conexão com o Supabase e o estado da sessão.
+ * Útil para diagnosticar falhas de sincronização em ambientes de produção.
+ */
+export async function validateSupabaseConnection() {
+  const metaEnv = (import.meta as any).env || {};
+  const url = metaEnv.VITE_SUPABASE_URL;
+  const key = metaEnv.VITE_SUPABASE_ANON_KEY;
+
+  console.group('[Supabase Diagnostic]');
+  console.log('Environment:', {
+    hasUrl: !!url,
+    hasKey: !!key,
+    isLocalhost: window.location.hostname === 'localhost',
+    origin: window.location.origin
+  });
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.error('CRITICAL: Supabase client failed to initialize. Check your VITE_ vars.');
+    console.groupEnd();
+    return { status: 'error', message: 'Client not initialized' };
+  }
+
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    
+    if (error) {
+      console.error('Auth Session Error:', error.message);
+      console.groupEnd();
+      return { status: 'error', message: error.message };
+    }
+
+    if (session) {
+      console.log('Session Active:', {
+        userId: session.user.id,
+        email: session.user.email,
+        expiresAt: new Date(session.expires_at! * 1000).toLocaleString()
+      });
+      console.groupEnd();
+      return { status: 'ok', userId: session.user.id };
+    } else {
+      console.warn('No active Supabase session. Data fetching will use fallback/mock mode if RLS is strict.');
+      console.groupEnd();
+      return { status: 'unauthenticated' };
+    }
+  } catch (err: any) {
+    console.error('Unexpected Diagnostic Error:', err);
+    console.groupEnd();
+    return { status: 'error', message: err.message };
+  }
+}
+
 const activeListeners: ActiveListener[] = [];
 
 export function triggerListenersForTable(firestoreCollection: string) {
@@ -243,11 +366,48 @@ export function triggerListenersForTable(firestoreCollection: string) {
 async function fetchAndTrigger(listener: ActiveListener) {
   try {
     const isDoc = listener.queryRef && listener.queryRef.type === 'doc';
+    const firestoreCollection = isDoc ? listener.queryRef.path : (listener.queryRef.type === 'query' ? listener.queryRef.collection.path : listener.table);
+    const table = getSupabaseTable(firestoreCollection);
+
+    // --- CAMADA DE CACHE IMEDIATA ---
+    // Se não for um documento específico, tentamos entregar o cache primeiro para latência zero
+    if (!isDoc && firestoreCollection !== 'system') {
+      const cachedData = getSupabaseCache(table);
+      if (cachedData.length > 0) {
+        const filteredCache = applyLocalFilters(cachedData, listener.queryRef);
+        if (filteredCache.length > 0) {
+          console.log(`[SupabaseAdapter] [Cache] Entrega otimista: ${table} (${filteredCache.length} itens)`);
+          const cachedDocs = filteredCache.map(item => ({
+            id: item.id,
+            exists: () => true,
+            data: () => item
+          }));
+          listener.onNext({
+            docs: cachedDocs,
+            empty: cachedDocs.length === 0,
+            size: cachedDocs.length,
+            forEach: (callback: any) => cachedDocs.forEach(callback)
+          });
+        }
+      }
+    }
+
     if (isDoc) {
       const docSnapshot = await getDoc(listener.queryRef);
       listener.onNext(docSnapshot);
     } else {
       const data = await executeSupabaseQuery(listener.queryRef);
+      
+      // Atualiza o cache global da tabela com os resultados mais recentes da rede
+      // Nota: Idealmente faríamos um merge cuidadoso, mas para sincronização completa de tabela, sobrepor é seguro.
+      if (firestoreCollection !== 'system') {
+        const currentCache = getSupabaseCache(table);
+        // Merge simples: atualiza existentes ou adiciona novos
+        const newCacheMap = new Map(currentCache.map(i => [i.id, i]));
+        data.forEach(item => newCacheMap.set(item.id, item));
+        setSupabaseCache(table, Array.from(newCacheMap.values()));
+      }
+
       const docs = data.map(item => ({
         id: item.id,
         exists: () => true,
@@ -281,17 +441,10 @@ export async function executeSupabaseQuery(queryRef: any): Promise<any[]> {
 
   const supabase = getSupabase() as any;
   if (!supabase) {
+    console.log(`[SupabaseAdapter] [Query] No Supabase instance. Using LOCAL MOCK for table: ${firestoreCollection}`);
     const table = getSupabaseTable(firestoreCollection);
     const store = getMockStorage(table);
-    // Simulação básica de filtros (apenas == por enquanto para o mock)
-    let filtered = [...store];
-    const filters = isQuery ? queryRef.filters : [];
-    for (const filter of filters) {
-      if (filter && filter.type === 'where' && filter.op === '==') {
-        filtered = filtered.filter(item => item[filter.field] === filter.value);
-      }
-    }
-    return filtered;
+    return applyLocalFilters(store, queryRef);
   }
 
   const table = getSupabaseTable(firestoreCollection);
@@ -353,9 +506,11 @@ export async function executeSupabaseQuery(queryRef: any): Promise<any[]> {
 
   const { data, error } = await q;
   if (error) {
-    console.error(`Erro ao executar pesquisa na tabela ${table}:`, error);
+    console.error(`[SupabaseAdapter] [Query] Error executing search on table ${table}:`, error);
     throw error;
   }
+
+  console.log(`[SupabaseAdapter] [Query] Results for ${table}:`, data?.length || 0, "rows found.");
 
   return (data || []).map(item => {
     const camel = snakeToCamel(item);
@@ -637,6 +792,7 @@ export function onSnapshot(
   const isDoc = queryRef.type === 'doc';
   const firestoreCollection = isQuery ? queryRef.collection.path : queryRef.path;
   const table = getSupabaseTable(firestoreCollection);
+  console.log(`[SupabaseAdapter] [Subscription] New onSnapshot for: ${firestoreCollection} (Table: ${table})`);
 
   const listenerId = Math.random().toString(36).substring(2, 11);
   const listener: ActiveListener = {
@@ -658,17 +814,33 @@ export function onSnapshot(
   let channel: any = null;
 
   if (supabase && firestoreCollection !== 'system') {
+    // Tenta extrair ownerId dos filtros para limitar o tráfego do Realtime
+    let filterStr = '';
+    const filters = isQuery ? queryRef.filters : [];
+    const ownerFilter = filters.find((f: any) => (f.type === 'where' && (f.field === 'ownerId' || f.field === 'owner_id')) && f.op === '==');
+    
+    if (ownerFilter) {
+      filterStr = `owner_id=eq.${ownerFilter.value}`;
+      console.log(`[SupabaseAdapter] [Realtime] Applying owner filter to subscription for ${table}: ${filterStr}`);
+    }
+
+    console.log(`[SupabaseAdapter] [Realtime] Connecting to channel: rt:${table}:${listenerId}`);
     channel = supabase
       .channel(`rt:${table}:${listenerId}`)
       .on(
         'postgres_changes',
-        { event: '*', scheme: 'public', table },
-        () => {
+        { event: '*', schema: 'public', table, filter: filterStr || undefined },
+        (payload: any) => {
+          console.log(`[SupabaseAdapter] [Realtime] Event received for ${table}:`, payload.eventType, payload.new?.id);
           // Quando ocorrer alteração remota, atualiza a query e notifica a tela
           fetchAndTrigger(listener);
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        console.log(`[SupabaseAdapter] [Realtime] Status for ${table}:`, status);
+      });
+  } else if (!supabase) {
+    console.warn(`[SupabaseAdapter] [Realtime] No Supabase instance. Realtime updates for ${table} will only happen on LOCAL changes.`);
   }
 
   // Retorna função desinscrever

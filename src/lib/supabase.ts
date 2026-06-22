@@ -11,12 +11,15 @@ export function getSupabase() {
 
     if (!supabaseUrl || !supabaseAnonKey) {
       console.warn(
-        'Supabase URL or Anon Key is missing. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file.'
+        '[Supabase] URL or Anon Key is missing. Falling back to local/mock mode.',
+        { url: !!supabaseUrl, key: !!supabaseAnonKey, env: metaEnv }
       );
       return null;
     }
 
+    console.log('[Supabase] Initializing client with URL:', supabaseUrl);
     supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+    console.log('[Supabase] Client initialized successfully.');
   }
   return supabaseInstance;
 }

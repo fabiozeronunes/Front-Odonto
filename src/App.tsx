@@ -50,6 +50,8 @@ import ProcedureManager from './components/ProcedureManager';
 import SpecialtyManager from './components/SpecialtyManager';
 import FinancialReports from './components/FinancialReports';
 import UserRegistration from './components/UserRegistration';
+import { validateSupabaseConnection } from './lib/supabaseAdapter';
+import { SupabaseDiagnostic } from './components/SupabaseDiagnostic';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -71,6 +73,13 @@ export default function App() {
   });
   const [isSpecialtiesExpanded, setIsSpecialtiesExpanded] = useState(false);
   const [dbVersion, setDbVersion] = useState<string | null>(null);
+
+  // Diagnóstico inicial do Supabase
+  useEffect(() => {
+    validateSupabaseConnection().then(result => {
+      console.log('[App] Supabase Connection Diagnostic Result:', result);
+    });
+  }, []);
 
   // Sync version checker
   useEffect(() => {
@@ -671,6 +680,8 @@ export default function App() {
           </AnimatePresence>
         </div>
       </main>
+
+      <SupabaseDiagnostic />
 
       {/* Sincronizando com o Google em segundo plano com Dashboard ativo atrás */}
       {loading && view === 'dashboard' && (
