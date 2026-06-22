@@ -122,11 +122,27 @@ export const DataDiagnostic: React.FC = () => {
               </div>
             </div>
             
+            <div className="grid grid-cols-2 gap-1 mt-1">
+              <div className="p-1 px-2 border border-neutral-200 rounded text-[9px] text-neutral-500 bg-white">
+                URL: <span className={supabaseStatus.debug.hasUrl ? 'text-emerald-600 font-bold' : 'text-red-500'}>{supabaseStatus.debug.hasUrl ? 'Presente' : 'Ausente'}</span>
+              </div>
+              <div className="p-1 px-2 border border-neutral-200 rounded text-[9px] text-neutral-500 bg-white">
+                Key: <span className={supabaseStatus.debug.hasKey ? 'text-emerald-600 font-bold' : 'text-red-500'}>{supabaseStatus.debug.hasKey ? 'Presente' : 'Ausente'}</span>
+              </div>
+            </div>
+
+            {supabaseStatus.isConfigured && (
+              <div className="text-[9px] text-neutral-400 italic flex items-center gap-1">
+                <Info size={10} />
+                Origem: {supabaseStatus.source === 'inject' ? 'Secrets (AI Studio)' : 'Ambiente Local'}
+              </div>
+            )}
+            
             {!supabaseStatus.isConfigured && (
               <div className="p-2 bg-amber-50 rounded border border-amber-100 flex gap-2">
                 <AlertTriangle size={12} className="text-amber-600 shrink-0 mt-0.5" />
                 <p className="text-[9px] text-amber-800 leading-tight">
-                  Chaves ausentes. Configure em <span className="font-bold">Settings &gt; Secrets</span> do AI Studio.
+                  Chaves ausentes. Adicione <span className="font-bold">VITE_SUPABASE_URL</span> e <span className="font-bold">VITE_SUPABASE_ANON_KEY</span> em <span className="font-bold">Settings &gt; Secrets</span> do AI Studio.
                 </p>
               </div>
             )}
