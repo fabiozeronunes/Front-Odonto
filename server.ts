@@ -751,6 +751,16 @@ app.post("/api/wa-connect", async (req, res) => {
   // If force flag is present or we are in a likely stuck state, reset everything
   if (req.body?.force || (isConnecting && connectionStatus === 'connecting')) {
     debugLog("Forcing connection reset as requested or detecting stuck state");
+    if (req.body?.force) {
+      try {
+        if (fs.existsSync('wa_auth')) {
+          fs.rmSync('wa_auth', { recursive: true, force: true });
+          debugLog("wa_auth directory deleted successfully for fresh connection");
+        }
+      } catch(e: any) {
+        debugLog("Failed to delete wa_auth for fresh connection: " + e.message);
+      }
+    }
     isConnecting = false;
     qrCode = null;
     connectionStatus = 'disconnected';
