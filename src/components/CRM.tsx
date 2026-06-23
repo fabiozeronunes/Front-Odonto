@@ -472,15 +472,23 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
       <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
         <div className="flex gap-3 w-full sm:w-auto order-2 sm:order-1">
           <button 
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              setIsModalOpen(true);
+            }}
             onClick={() => setIsModalOpen(true)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/20 text-sm"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/20 text-sm cursor-pointer"
           >
             <Plus size={18} />
             Novo Lead
           </button>
           <button 
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              setIsStageModalOpen(true);
+            }}
             onClick={() => setIsStageModalOpen(true)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-neutral-600 hover:bg-neutral-50 font-bold transition-all text-sm shadow-sm"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-neutral-600 hover:bg-neutral-50 font-bold transition-all text-sm shadow-sm cursor-pointer"
           >
             <Plus size={18} />
             Nova Etapa
@@ -533,27 +541,43 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                   <button 
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
-                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingStage(column);
+                      setNewStageTitle(column.title);
+                      setIsStageModalOpen(true);
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingStage(column);
                       setNewStageTitle(column.title);
                       setIsStageModalOpen(true);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded relative z-20"
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded relative z-20 cursor-pointer"
                   >
                     <Edit2 size={12} />
                   </button>
                   <button 
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
-                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setStageToDelete(column.id);
+                    }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       setStageToDelete(column.id);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-20"
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-20 cursor-pointer"
                   >
                     <Trash2 size={12} />
                   </button>
