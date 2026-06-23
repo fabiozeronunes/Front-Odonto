@@ -249,84 +249,128 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
   });
 
   return (
-    <div className="connections-page-wrapper max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-      <div className="flex justify-between items-center bg-white p-4 sm:p-8 rounded-3xl shadow-sm border border-neutral-100 italic">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 mb-2">
-            {type === 'ads' ? 'Conexões AI Ads' : 'Conexões'}
-          </h1>
-          <p className="text-sm sm:text-base text-neutral-500">
-            {type === 'ads' 
-              ? 'Conecte suas contas de tráfego pago (Google Ads, Facebook Ads e TikTok Ads) para que nossa inteligência crie e otimize suas campanhas.'
-              : 'Gerencie as integrações de APIs e interfaces que alimentam o Front Odonto AI.'
-            }
-          </p>
+    <div className="connections-page-wrapper max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 py-4 sm:py-6">
+      {/* 1. Caixa Integrações Ativas */}
+      <div className="bg-white p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] shadow-sm border border-neutral-100 space-y-6">
+        <div className="flex items-center gap-3 pb-4 border-b border-neutral-100">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <Link2 size={20} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-neutral-900">Integrações Ativas</h2>
+            <p className="text-xs text-neutral-500">Conecte e gerencie seus canais de atendimento e agendamento.</p>
+          </div>
         </div>
-        <div className="hidden sm:flex w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl items-center justify-center shadow-inner shrink-0 self-start">
-          <Link2 size={32} />
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {integrations.map((integration, index) => {
+            const status = connections[integration.id];
+            const isConnected = status === 'connected';
+            const isConnecting = status === 'connecting';
+            
+            return (
+              <motion.div
+                key={integration.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="bg-neutral-50/50 p-5 rounded-2xl border border-neutral-100 hover:border-neutral-200 hover:bg-neutral-50 transition-all flex flex-col justify-between"
+              >
+                <div className="flex items-start gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${integration.color}`}>
+                    <integration.icon size={24} />
+                  </div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
+                      <h3 className="text-base font-bold text-neutral-900 truncate">{integration.name}</h3>
+                      {isConnected ? (
+                        <span className="flex items-center gap-1 text-[10px] sm:text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full w-max">
+                          <CheckCircle2 size={12} /> Ativo
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[10px] sm:text-xs font-medium text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full w-max">
+                          <AlertCircle size={12} /> Inativo
+                        </span>
+                      )}
+                    </div>
+                    
+                    <p className="text-xs text-neutral-500 leading-relaxed mb-4">
+                      {integration.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 w-full mt-2">
+                  <button
+                    onClick={() => connectService(integration.id, false)}
+                    disabled={isConnecting}
+                    className={`
+                      flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer
+                      ${isConnected 
+                        ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' 
+                        : 'bg-neutral-900 text-white hover:bg-neutral-800'
+                      }
+                      ${isConnecting ? 'opacity-70 cursor-not-allowed' : ''}
+                    `}
+                  >
+                    {isConnecting ? (
+                      <>Conectando...</>
+                    ) : integration.id === 'whatsapp' ? (
+                      <>
+                        Configurar QR
+                        <ExternalLink size={12} />
+                      </>
+                    ) : isConnected ? (
+                      (integration.id === 'agenda') ? 'Sincronizar' : 'Desconectar'
+                    ) : (
+                      (integration.id === 'google' || integration.id === 'agenda') ? 'Sincronizar' : `Conectar`
+                    )}
+                  </button>
+                  
+                  {isConnected && integration.id !== 'whatsapp' && (
+                    <button 
+                      onClick={() => openSettings(integration.id)}
+                      className="px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100 cursor-pointer"
+                    >
+                      Config.
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
 
+      {/* 2. Caixa Configurações de Notificações */}
       {type !== 'ads' && (
-        <div className="flex border-b border-neutral-200 overflow-x-auto scrollbar-none whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0">
-          <button
-            onClick={() => setSubTab('integrations')}
-            className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 shrink-0 ${
-              subTab === 'integrations'
-                ? 'border-neutral-900 text-neutral-900 font-extrabold'
-                : 'border-transparent text-neutral-400 hover:text-neutral-600'
-            }`}
-          >
-            <Link2 size={16} />
-            Integrações Ativas
-          </button>
-          <button
-            id="notification-settings-tab"
-            onClick={() => setSubTab('notifications')}
-            className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 shrink-0 ${
-              subTab === 'notifications'
-                ? 'border-emerald-500 text-emerald-600 font-extrabold'
-                : 'border-transparent text-neutral-400 hover:text-neutral-500'
-            }`}
-          >
-            <Settings2 size={16} />
-            Configurações de Notificações
-          </button>
-          <button
-            onClick={() => setSubTab('quick_responses')}
-            className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 shrink-0 ${
-              subTab === 'quick_responses'
-                ? 'border-emerald-500 text-emerald-600 font-extrabold'
-                : 'border-transparent text-neutral-400 hover:text-neutral-500'
-            }`}
-          >
-            <MessageSquare size={16} />
-            Respostas Rápidas
-          </button>
-        </div>
-      )}
+        <div className="bg-white p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] shadow-sm border border-neutral-100 space-y-6">
+          <div className="flex items-center gap-3 pb-4 border-b border-neutral-100">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <Bell size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-neutral-900">Configurações de Notificações</h2>
+              <p className="text-xs text-neutral-500">Configure as mensagens automáticas de confirmação e lembrete.</p>
+            </div>
+          </div>
 
-      {subTab === 'notifications' && type !== 'ads' ? (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-        >
-          {/* Card de Configuração Central */}
-          <div className="bg-white p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] shadow-sm border border-neutral-100 space-y-6 sm:space-y-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-neutral-100">
+          {/* Agente de Lembretes Automáticos WhatsApp */}
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-neutral-50">
               <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                  <Bell size={24} />
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                  <MessageSquare size={20} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-neutral-900">Agente de Lembretes Automáticos WhatsApp</h2>
-                  <p className="text-sm text-neutral-500">Configure com quantos minutos antes do agendamento o WhatsApp disparará o lembrete.</p>
+                  <h3 className="text-base font-bold text-neutral-900">Agente de Lembretes Automáticos WhatsApp</h3>
+                  <p className="text-xs text-neutral-500">Configure com quantos minutos antes do agendamento o WhatsApp disparará o lembrete.</p>
                 </div>
               </div>
               
               {/* Toggle Habilitar/Desabilitar */}
-              <label className="flex items-center gap-3 bg-neutral-50 hover:bg-neutral-100/80 px-4 py-2.5 rounded-2xl cursor-pointer transition-all border border-neutral-100 max-w-max self-start sm:self-center">
+              <label className="flex items-center gap-3 bg-neutral-50 hover:bg-neutral-100/80 px-4 py-2 rounded-2xl cursor-pointer transition-all border border-neutral-100 max-w-max self-start sm:self-center">
                 <span className="text-xs font-bold uppercase tracking-wider text-neutral-600">Disparo Automático</span>
                 <button
                   onClick={() => setRemindersEnabled(!remindersEnabled)}
@@ -337,14 +381,14 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
               </label>
             </div>
 
-            {/* Configuração do Tempo de Antecedência */}
+            {/* Configuração do Tempo de Antecedência - Formatted in 1 column */}
             <div className="space-y-4">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+              <div className="flex flex-col gap-2">
                 <div>
-                  <label className="block text-sm font-extrabold text-neutral-800 uppercase tracking-wide">Minutos de Antecedência</label>
+                  <label className="block text-xs font-bold text-neutral-800 uppercase tracking-wide">Minutos de Antecedência</label>
                   <p className="text-xs text-neutral-500">O sistema irá escanear agendamentos marcados para exatamente este intervalo no futuro.</p>
                 </div>
-                <div className="flex items-center gap-3 max-w-sm">
+                <div className="flex items-center gap-3 w-full">
                   <div className="relative flex-1">
                     <Clock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
                     <input
@@ -390,18 +434,18 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
 
               {/* Info Box do tempo calculado */}
               <div className="p-3.5 bg-emerald-50/50 border border-emerald-100 text-emerald-800 rounded-xl text-xs font-bold leading-relaxed flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                 <span>Os pacientes serão notificados com exatamente <strong className="font-extrabold text-emerald-700">{getFriendlyMinutesDesc(reminderMinutes)}</strong> de antecedência antes de suas respectivas consultas.</span>
               </div>
             </div>
 
-            {/* Modelos de Mensagem Personalizados */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4 border-t border-neutral-100">
+            {/* Modelos de Mensagem Personalizados - Formatted in 1 column */}
+            <div className="space-y-6 pt-6 border-t border-neutral-100">
               
               {/* Template Local */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-extrabold text-neutral-800 uppercase tracking-wider">Lembrete para Consultas Locais</label>
+                  <label className="block text-xs font-bold text-neutral-800 uppercase tracking-wider">Lembrete para Consultas Locais</label>
                   <span className="text-[9px] font-bold text-neutral-400">Variáveis Provedor</span>
                 </div>
                 <textarea
@@ -427,9 +471,9 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
               </div>
 
               {/* Template Google Calendar */}
-              <div className="space-y-3">
+              <div className="space-y-3 pt-6 border-t border-neutral-100">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-extrabold text-neutral-800 uppercase tracking-wider">Lembrete para Google Agenda</label>
+                  <label className="block text-xs font-bold text-neutral-800 uppercase tracking-wider">Lembrete para Google Agenda</label>
                   <span className="text-[9px] font-bold text-neutral-400">Variáveis Google</span>
                 </div>
                 <textarea
@@ -456,80 +500,74 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
 
             </div>
 
-            {/* Prédica Visual WhatsApp (Preview Bubble) */}
-            <div className="bg-neutral-50/50 rounded-2xl border border-neutral-100 p-5 mt-4">
-              <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-widest block mb-3">Pré-visualização do Lembrete no Celular (WhatsApp)</span>
+            {/* Prédica Visual WhatsApp (Preview Bubble) - Formatted in 1 column */}
+            <div className="bg-neutral-50/50 rounded-2xl border border-neutral-100 p-5 mt-4 space-y-6">
+              <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-widest block border-b border-neutral-100 pb-2">Pré-visualização do Lembrete no Celular (WhatsApp)</span>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Prévia Lembrete Local */}
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider block">Prévia: Lembrete Local</span>
-                  <div className="bg-[#efeae2] p-4 rounded-2xl border border-[#e1d9ca] shadow-inner relative overflow-hidden" style={{ minHeight: '120px' }}>
-                    {/* Wallpaper background pattern logic */}
-                    <div 
-                      className="absolute inset-0 opacity-10 pointer-events-none" 
-                      style={{ 
-                        backgroundImage: `radial-gradient(circle, #000 10%, transparent 11%), radial-gradient(circle, #000 10%, transparent 11%)`,
-                        backgroundSize: '16px 16px',
-                        backgroundPosition: '0 0, 8px 8px'
-                      }} 
-                    />
-                    
-                    {/* Chat Bubble Container */}
-                    <div className="relative bg-[#d9fdd3] text-[#111b21] py-2 px-3.5 rounded-xl shadow-sm max-w-[95%] ml-auto text-xs leading-relaxed border-t border-r border-[#cee9c1]">
-                      <p className="whitespace-pre-line text-[11px] font-medium font-sans">
-                        {templateLocal
-                          .replace(/{nome_paciente}/g, 'Fabio Nunes')
-                          .replace(/{data}/g, '15/06')
-                          .replace(/{hora}/g, '10:00')
-                          .replace(/{dentista}/g, 'Dra. Gabriela Vasconcelos')
-                          .replace(/{clinica}/g, 'Clínica Sorriso Perfeito')
-                          .replace(/{clínica}/g, 'Clínica Sorriso Perfeito')
-                          .replace(/{localizacao}/g, 'Av. Paulista, 1500 - Sala 4')
-                          .replace(/{localização}/g, 'Av. Paulista, 1500 - Sala 4')
-                        }
-                      </p>
-                      <div className="flex items-center justify-end gap-1 mt-1 text-[8px] text-[#667781] font-sans">
-                        <span>15:57</span>
-                        <span className="text-sky-500 font-extrabold font-mono text-[10px] leading-none">✓✓</span>
-                      </div>
+              {/* Prévia Lembrete Local */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider block">Prévia: Lembrete Local</span>
+                <div className="bg-[#efeae2] p-4 rounded-2xl border border-[#e1d9ca] shadow-inner relative overflow-hidden" style={{ minHeight: '120px' }}>
+                  <div 
+                    className="absolute inset-0 opacity-10 pointer-events-none" 
+                    style={{ 
+                      backgroundImage: `radial-gradient(circle, #000 10%, transparent 11%), radial-gradient(circle, #000 10%, transparent 11%)`,
+                      backgroundSize: '16px 16px',
+                      backgroundPosition: '0 0, 8px 8px'
+                    }} 
+                  />
+                  
+                  <div className="relative bg-[#d9fdd3] text-[#111b21] py-2 px-3.5 rounded-xl shadow-sm max-w-[95%] ml-auto text-xs leading-relaxed border-t border-r border-[#cee9c1]">
+                    <p className="whitespace-pre-line text-[11px] font-medium font-sans">
+                      {templateLocal
+                        .replace(/{nome_paciente}/g, 'Fabio Nunes')
+                        .replace(/{data}/g, '15/06')
+                        .replace(/{hora}/g, '10:00')
+                        .replace(/{dentista}/g, 'Dra. Gabriela Vasconcelos')
+                        .replace(/{clinica}/g, 'Clínica Sorriso Perfeito')
+                        .replace(/{clínica}/g, 'Clínica Sorriso Perfeito')
+                        .replace(/{localizacao}/g, 'Av. Paulista, 1500 - Sala 4')
+                        .replace(/{localização}/g, 'Av. Paulista, 1500 - Sala 4')
+                      }
+                    </p>
+                    <div className="flex items-center justify-end gap-1 mt-1 text-[8px] text-[#667781] font-sans">
+                      <span>15:57</span>
+                      <span className="text-sky-500 font-extrabold font-mono text-[10px] leading-none">✓✓</span>
                     </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Prévia Lembrete Google */}
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider block">Prévia: Google Agenda</span>
-                  <div className="bg-[#efeae2] p-4 rounded-2xl border border-[#e1d9ca] shadow-inner relative overflow-hidden" style={{ minHeight: '120px' }}>
-                    {/* Wallpaper background pattern logic */}
-                    <div 
-                      className="absolute inset-0 opacity-10 pointer-events-none" 
-                      style={{ 
-                        backgroundImage: `radial-gradient(circle, #000 10%, transparent 11%), radial-gradient(circle, #000 10%, transparent 11%)`,
-                        backgroundSize: '16px 16px',
-                        backgroundPosition: '0 0, 8px 8px'
-                      }} 
-                    />
-                    
-                    {/* Chat Bubble Container */}
-                    <div className="relative bg-[#d9fdd3] text-[#111b21] py-2 px-3.5 rounded-xl shadow-sm max-w-[95%] ml-auto text-xs leading-relaxed border-t border-r border-[#cee9c1]">
-                      <p className="whitespace-pre-line text-[11px] font-medium font-sans">
-                        {templateGoogle
-                          .replace(/{nome_paciente}/g, 'Fabio Nunes')
-                          .replace(/{titulo_consulta}/g, 'Clareamento Dental')
-                          .replace(/{data}/g, '16/06')
-                          .replace(/{hora}/g, '14:30')
-                          .replace(/{localizacao}/g, ' em Consultório Principal')
-                          .replace(/{localização}/g, ' em Consultório Principal')
-                          .replace(/{dentista}/g, 'Dr. Roberto Cruz')
-                          .replace(/{clinica}/g, 'Odonto Riso')
-                          .replace(/{clínica}/g, 'Odonto Riso')
-                        }
-                      </p>
-                      <div className="flex items-center justify-end gap-1 mt-1 text-[8px] text-[#667781] font-sans">
-                        <span>16:02</span>
-                        <span className="text-sky-500 font-extrabold font-mono text-[10px] leading-none">✓✓</span>
-                      </div>
+              {/* Prévia Lembrete Google */}
+              <div className="space-y-1.5 pt-6 border-t border-neutral-100">
+                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider block">Prévia: Google Agenda</span>
+                <div className="bg-[#efeae2] p-4 rounded-2xl border border-[#e1d9ca] shadow-inner relative overflow-hidden" style={{ minHeight: '120px' }}>
+                  <div 
+                    className="absolute inset-0 opacity-10 pointer-events-none" 
+                    style={{ 
+                      backgroundImage: `radial-gradient(circle, #000 10%, transparent 11%), radial-gradient(circle, #000 10%, transparent 11%)`,
+                      backgroundSize: '16px 16px',
+                      backgroundPosition: '0 0, 8px 8px'
+                    }} 
+                  />
+                  
+                  <div className="relative bg-[#d9fdd3] text-[#111b21] py-2 px-3.5 rounded-xl shadow-sm max-w-[95%] ml-auto text-xs leading-relaxed border-t border-r border-[#cee9c1]">
+                    <p className="whitespace-pre-line text-[11px] font-medium font-sans">
+                      {templateGoogle
+                        .replace(/{nome_paciente}/g, 'Fabio Nunes')
+                        .replace(/{titulo_consulta}/g, 'Clareamento Dental')
+                        .replace(/{data}/g, '16/06')
+                        .replace(/{hora}/g, '14:30')
+                        .replace(/{localizacao}/g, ' em Consultório Principal')
+                        .replace(/{localização}/g, ' em Consultório Principal')
+                        .replace(/{dentista}/g, 'Dr. Roberto Cruz')
+                        .replace(/{clinica}/g, 'Odonto Riso')
+                        .replace(/{clínica}/g, 'Odonto Riso')
+                      }
+                    </p>
+                    <div className="flex items-center justify-end gap-1 mt-1 text-[8px] text-[#667781] font-sans">
+                      <span>16:02</span>
+                      <span className="text-sky-500 font-extrabold font-mono text-[10px] leading-none">✓✓</span>
                     </div>
                   </div>
                 </div>
@@ -562,94 +600,27 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
             </div>
 
           </div>
-        </motion.div>
-      ) : subTab === 'quick_responses' && type !== 'ads' ? (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-        >
+        </div>
+      )}
+
+      {/* 3. Caixa Respostas Automáticas */}
+      {type !== 'ads' && (
+        <div className="bg-white p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] shadow-sm border border-neutral-100 space-y-6">
+          <div className="flex items-center gap-3 pb-4 border-b border-neutral-100">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <MessageSquare size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-neutral-900">Respostas Automáticas</h2>
+              <p className="text-xs text-neutral-500">Configure as respostas rápidas de suporte e agendamento.</p>
+            </div>
+          </div>
+
+          {/* Gerenciar Respostas Rápidas - Nested Card style in 1 column */}
+          <div className="border border-neutral-100 rounded-2xl overflow-hidden">
             <QuickResponsesManager />
-        </motion.div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-12">
-        {integrations.map((integration, index) => {
-          const status = connections[integration.id];
-          const isConnected = status === 'connected';
-          const isConnecting = status === 'connecting';
-          
-          return (
-            <motion.div
-              key={integration.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="bg-white p-5 rounded-2xl shadow-sm border border-neutral-100 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start gap-4">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${integration.color}`}>
-                  <integration.icon size={24} />
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
-                    <h3 className="text-lg font-semibold text-neutral-900 truncate">{integration.name}</h3>
-                    {isConnected ? (
-                      <span className="flex items-center gap-1 text-[10px] sm:text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full w-max">
-                        <CheckCircle2 size={12} /> Ativo
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-[10px] sm:text-xs font-medium text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full w-max">
-                        <AlertCircle size={12} /> Inativo
-                      </span>
-                    )}
-                  </div>
-                  
-                  <p className="text-xs text-neutral-500 leading-relaxed mb-4 line-clamp-2">
-                    {integration.description}
-                  </p>
-                  
-                  <div className="flex flex-wrap gap-2 w-full">
-                      <button
-                        onClick={() => connectService(integration.id, false)}
-                        disabled={isConnecting}
-                        className={`
-                          flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5
-                          ${isConnected 
-                            ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' 
-                            : 'bg-neutral-900 text-white hover:bg-neutral-800'
-                          }
-                          ${isConnecting ? 'opacity-70 cursor-not-allowed' : ''}
-                        `}
-                      >
-                        {isConnecting ? (
-                          <>Conectando...</>
-                        ) : integration.id === 'whatsapp' ? (
-                          <>
-                            Configurar QR
-                            <ExternalLink size={12} />
-                          </>
-                        ) : isConnected ? (
-                          (integration.id === 'agenda') ? 'Sincronizar' : 'Desconectar'
-                        ) : (
-                          (integration.id === 'google' || integration.id === 'agenda') ? 'Sincronizar' : `Conectar`
-                        )}
-                      </button>
-                      
-                      {isConnected && integration.id !== 'whatsapp' && (
-                        <button 
-                          onClick={() => openSettings(integration.id)}
-                          className="px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100"
-                        >
-                          Config.
-                        </button>
-                      )}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
+          </div>
+        </div>
       )}
 
       {showConfigGuide && (
