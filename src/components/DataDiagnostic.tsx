@@ -186,7 +186,7 @@ export const DataDiagnostic: React.FC = () => {
             {supabaseStatus.isConfigured && (
               <div className="text-[9px] text-neutral-400 italic flex items-center gap-1">
                 <Info size={10} />
-                Origem: {supabaseStatus.source === 'inject' ? 'Secrets' : (supabaseStatus.source === 'api' ? 'Servidor' : (supabaseStatus.source === 'manual' ? 'Manual (Local)' : 'Bundle'))}
+                Origem: {(supabaseStatus.source as string) === 'inject' ? 'Secrets' : (supabaseStatus.source === 'api' ? 'Servidor' : (supabaseStatus.source === 'manual' ? 'Manual (Local)' : 'Bundle'))}
               </div>
             )}
             

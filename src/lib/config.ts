@@ -8,7 +8,7 @@ interface SupabaseConfig {
   url: string;
   anonKey: string;
   isConfigured: boolean;
-  source: 'vite' | 'inject' | 'api' | 'none';
+  source: 'vite' | 'inject' | 'api' | 'manual' | 'none';
   debug: any;
 }
 

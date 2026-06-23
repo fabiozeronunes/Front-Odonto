@@ -57,7 +57,7 @@ app.use((req, res, next) => {
   ];
 
   if (origin) {
-    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('run.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('run.app') || origin.includes('studio') || origin.includes('google.com') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
       res.setHeader('Access-Control-Allow-Origin', origin);
     } else {
       res.setHeader('Access-Control-Allow-Origin', 'https://front-odonto.vercel.app');
@@ -290,16 +290,17 @@ async function connectToWhatsApp() {
 
     sock = makeWASocket({
       version,
-      printQRInTerminal: true, // Show QR in terminal too for server-side debug
+      printQRInTerminal: false, 
       auth: state,
-      logger: pino({ level: 'info' }), // Increased log level for debug
-      browser: Browsers.macOS('Chrome'), // Consistent browser string
+      logger: pino({ level: 'silent' }), 
+      browser: Browsers.ubuntu('Chrome'), 
       syncFullHistory: false,
-      connectTimeoutMs: 60000, // Increase timeout for slower networks
-      defaultQueryTimeoutMs: 60000,
+      connectTimeoutMs: 20000, 
+      defaultQueryTimeoutMs: 20000,
       keepAliveIntervalMs: 30000,
       generateHighQualityLinkPreview: false,
-      markOnlineOnConnect: true
+      markOnlineOnConnect: true,
+      retryRequestDelayMs: 2000
     });
 
     // Safety timeout to reset isConnecting if no events fire for a long time
@@ -322,20 +323,21 @@ async function connectToWhatsApp() {
       
       if (qr) {
         debugLog("Generating QR Code from update.qr - Length: " + qr.length);
-        console.log("WhatsApp QR Code received - generating base64...");
+        console.log(`[WhatsApp] QR Code length ${qr.length} received. Generating image...`);
         try {
-          qrCode = await QRCode.toDataURL(qr);
-          debugLog("QR Code generated successfully as base64");
+          const generatedQr = await QRCode.toDataURL(qr);
+          qrCode = generatedQr;
+          debugLog("QR Code generated successfully");
           
           connectionStatus = 'qr';
           isConnecting = false;
           broadcast({ type: 'status', status: 'qr', qr: qrCode });
-          console.log("QR Code broadcasted to clients");
+          console.log("[WhatsApp] QR Code broadcasted to all connected clients");
         } catch (e) {
           debugLog("QR Code generation error: " + (e as any).message);
           isConnecting = false;
           connectionStatus = 'disconnected';
-          broadcast({ type: 'status', status: 'disconnected', error: 'Falha ao gerar QR Code' });
+          broadcast({ type: 'status', status: 'disconnected', error: 'Falha ao gerar imagem do QR Code' });
         }
       }
 
@@ -745,16 +747,27 @@ app.get("/api/wa-status", (req, res) => {
 
 app.post("/api/wa-connect", async (req, res) => {
   debugLog("Explicit connection start requested via /api/wa-connect");
+  
+  // If force flag is present or we are in a likely stuck state, reset everything
+  if (req.body?.force || (isConnecting && connectionStatus === 'connecting')) {
+    debugLog("Forcing connection reset as requested or detecting stuck state");
+    isConnecting = false;
+    qrCode = null;
+    connectionStatus = 'disconnected';
+    if (sock) {
+      try { sock.ws?.close(); sock.end(undefined); } catch(e) {}
+      sock = null;
+    }
+  }
+
   if (sock && connectionStatus === 'connected') {
     return res.json({ success: true, message: 'Já conectado' });
   }
   
-  // Clear any existing connecting locks if manually re-triggered
-  isConnecting = false;
-  
   connectToWhatsApp().then(() => {
     res.json({ success: true });
   }).catch((err) => {
+    debugLog("wa-connect error: " + err.message);
     res.status(500).json({ error: err.message });
   });
 });
@@ -767,43 +780,41 @@ app.post("/api/wa-disconnect", async (req, res) => {
   connectionStatus = 'disconnected';
   isConnecting = false;
 
-  const cleanup = () => {
+  const currentSock = sock;
+  sock = null; // Detach immediately to prevent race conditions during async logout
+
+  const finalizeCleanup = () => {
     try {
       if (fs.existsSync('wa_auth')) {
         fs.rmSync('wa_auth', { recursive: true, force: true });
-        debugLog("wa_auth deleted successfully on explicit disconnect");
+        debugLog("wa_auth directory deleted successfully");
       }
     } catch(e: any) {
-      debugLog("Failed to delete wa_auth on explicit disconnect: " + e.message);
+      debugLog("Failed to delete wa_auth: " + e.message);
     }
-    sock = null;
     broadcast({ type: 'status', status: 'disconnected', qr: null, user: null });
   };
 
-  // Force-kill the socket connection
-  if (sock) {
+  if (currentSock) {
     try {
-      if (sock.ws) sock.ws.terminate();
-      sock.end(undefined);
-    } catch(e) {
-      debugLog("Error during aggressive sock termination: " + (e as any).message);
+      debugLog("Attempting graceful WhatsApp logout...");
+      // Try logout with timeout
+      await Promise.race([
+        currentSock.logout(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Logout timeout')), 5000))
+      ]);
+      debugLog("WhatsApp logout successful");
+    } catch (e: any) {
+      debugLog("Logout failed or timed out: " + e.message);
+      // If logout fails, try to end socket forcefully
+      try {
+        if (currentSock.ws) currentSock.ws.terminate();
+        currentSock.end(undefined);
+      } catch (endErr) {}
     }
   }
-  cleanup();
 
-  if (sock) {
-    try {
-      await sock.logout();
-    } catch(e: any) {
-      debugLog("sock.logout error: " + e.message);
-    }
-    
-    // Safety fallback: force clear after 500ms
-    setTimeout(cleanup, 500);
-  } else {
-    cleanup();
-  }
-
+  finalizeCleanup();
   res.json({ success: true });
 });
 

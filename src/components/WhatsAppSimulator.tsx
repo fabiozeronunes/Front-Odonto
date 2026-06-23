@@ -31,6 +31,7 @@ import {
 import { db, auth } from '../lib/firebase';
 import { 
   collection, 
+  getDocs,
   addDoc, 
   setDoc,
   serverTimestamp, 
@@ -241,6 +242,7 @@ export default function WhatsAppSimulator() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'qr'>('disconnected');
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [connectedUser, setConnectedUser] = useState<{ id: string; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -501,6 +503,7 @@ export default function WhatsAppSimulator() {
   // Poll for connection status (Immediate fetch then smooth 20s interval)
   useEffect(() => {
     const fetchStatus = async () => {
+      if (isDisconnecting) return;
       try {
         const res = await fetch('/api/wa-status', {
           headers: { 'Accept': 'application/json' }
@@ -528,6 +531,7 @@ export default function WhatsAppSimulator() {
     socketRef.current = socket;
 
     socket.onmessage = (event) => {
+      if (isDisconnecting) return;
       try {
         const rawData = event.data;
         if (!rawData) return;
@@ -680,9 +684,9 @@ export default function WhatsAppSimulator() {
 
     return () => {
       clearInterval(interval);
-      socket.close();
+      if (socketRef.current) socketRef.current.close();
     };
-  }, []);
+  }, [currentUser, isDisconnecting]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -1168,11 +1172,15 @@ export default function WhatsAppSimulator() {
     setInput('');
   };
 
-  const handleConnect = async () => {
+  const handleConnect = async (force = false) => {
     setConnectionStatus('connecting');
     setQrCode(null);
     try {
-      await fetch('/api/wa-connect', { method: 'POST' });
+      await fetch('/api/wa-connect', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force })
+      });
     } catch (e) {
       console.error('Failed to initiate connection:', e);
     }
@@ -1180,13 +1188,44 @@ export default function WhatsAppSimulator() {
 
   const handleDisconnect = async () => {
     if (window.confirm("Deseja realmente terminar a sessão e desconectar esta conta do WhatsApp?")) {
-      setConnectionStatus('connecting');
+      setIsDisconnecting(true);
+      setConnectionStatus('connecting'); // Feedback visual de processamento
       setQrCode(null);
       setConnectedUser(null);
+      
+      // Cleanup logic: remove chats and patients that have no real messages
+      if (currentUser) {
+        try {
+          const chatsRef = collection(db, 'whatsapp_chats');
+          const qChats = query(chatsRef, where('ownerId', '==', currentUser.uid));
+          const chatsSnapshot = await getDocs(qChats);
+          
+          for (const chatDoc of chatsSnapshot.docs) {
+            const chatData = chatDoc.data();
+            const jid = chatData.chatJid;
+            if (!jid) continue;
+            const phone = jid.split('@')[0];
+            const msgsQuery = query(collection(db, 'whatsapp_messages'), where('ownerId', '==', currentUser.uid), where('chatJid', '==', jid));
+            const msgsSnapshot = await getDocs(msgsQuery);
+            if (msgsSnapshot.empty) {
+              await deleteDoc(doc(db, 'whatsapp_chats', chatDoc.id));
+              const ptQuery = query(collection(db, 'pacientes'), where('ownerId', '==', currentUser.uid), where('phone', '==', phone));
+              const ptSnapshot = await getDocs(ptQuery);
+              for (const ptDoc of ptSnapshot.docs) {
+                await deleteDoc(doc(db, 'pacientes', ptDoc.id));
+              }
+            }
+          }
+        } catch (err) {}
+      }
+
       try {
         await fetch('/api/wa-disconnect', { method: 'POST' });
+        setIsDisconnecting(false);
+        handleConnect(true);
       } catch (e) {
-        console.error('Failed to disconnect:', e);
+        setIsDisconnecting(false);
+        setConnectionStatus('disconnected');
       }
     }
   };
@@ -1341,6 +1380,17 @@ export default function WhatsAppSimulator() {
               <ExternalLink size={12} className="stroke-[2.5]" />
               <span>Painel</span>
             </a>
+
+            {connectionStatus === 'connected' && (
+              <button 
+                onClick={handleDisconnect}
+                title="Desconectar Sessão do WhatsApp"
+                className="flex items-center gap-1.5 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 text-[10px] font-extrabold uppercase tracking-widest py-1.5 px-3 rounded-xl transition-all border border-red-100 shadow-xs"
+              >
+                <Power size={12} className="stroke-[2.5]" />
+                <span className="hidden sm:inline">Desconectar</span>
+              </button>
+            )}
             
             
             <button className="hover:text-[#128C7E] p-1 rounded-lg hover:bg-white/50">
@@ -1392,7 +1442,7 @@ export default function WhatsAppSimulator() {
                 </div>
              ) : (
                 <button 
-                  onClick={handleConnect}
+                  onClick={() => handleConnect()}
                   className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-neutral-300 rounded-2xl text-xs font-black text-neutral-500 uppercase tracking-widest hover:border-[#128C7E] hover:text-[#128C7E] transition-all"
                 >
                   <QrCode size={16} />
