@@ -514,14 +514,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="flex gap-4 pb-6 overflow-x-auto lg:overflow-x-visible lg:flex-wrap select-none min-h-[600px] custom-scrollbar scroll-smooth">
+        <div className="flex flex-col md:flex-row gap-4 pb-6 md:overflow-x-auto lg:overflow-x-visible lg:flex-wrap select-none min-h-[600px] custom-scrollbar scroll-smooth">
           {stages.map((column, colIdx) => (
             <motion.div 
               key={column.id || colIdx}
               layout
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
-              className="space-y-4 shrink-0 w-[280px] sm:w-[320px] lg:w-[calc(33.333%-1rem)] xl:w-[calc(25%-1rem)] 2xl:w-[calc(20%-1rem)] transition-all duration-300 rounded-2xl p-1"
+              className="space-y-4 w-full md:shrink-0 md:w-[320px] lg:w-[calc(33.333%-1rem)] xl:w-[calc(25%-1rem)] 2xl:w-[calc(20%-1rem)] transition-all duration-300 rounded-2xl p-1"
             >
               <div 
                 draggable
@@ -565,7 +565,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
               <div 
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleDropPatient(e, column.id)}
-                className="bg-neutral-100/50 p-3 rounded-2xl min-h-[500px] space-y-3 border border-dashed border-neutral-200 hover:bg-neutral-100/80 transition-all duration-150"
+                className="bg-neutral-100/50 p-3 rounded-2xl min-h-[150px] md:min-h-[500px] space-y-3 border border-dashed border-neutral-200 hover:bg-neutral-100/80 transition-all duration-150"
               >
                 {filteredPatients.filter(p => p && p.status && isMatchStage(p.status, column.id)).map((patient, idx) => (
                   <motion.div 
