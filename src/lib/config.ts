@@ -8,21 +8,21 @@ interface SupabaseConfig {
   url: string;
   anonKey: string;
   isConfigured: boolean;
-  source: 'vite' | 'inject' | 'none';
+  source: 'vite' | 'inject' | 'api' | 'none';
+  debug: any;
 }
 
-function getSafeEnv() {
+function getInitialEnv(): SupabaseConfig {
   const metaEnv = (import.meta as any).env || {};
   const injectEnv = (window as any).ENV_CONFIG || {};
 
   const rawUrl = injectEnv.VITE_SUPABASE_URL || metaEnv.VITE_SUPABASE_URL || '';
   const rawKey = injectEnv.VITE_SUPABASE_ANON_KEY || metaEnv.VITE_SUPABASE_ANON_KEY || '';
 
-  // Limpeza de valores que podem vir como string "null" ou "undefined"
   const url = (rawUrl && rawUrl !== 'null' && rawUrl !== 'undefined') ? rawUrl : '';
   const anonKey = (rawKey && rawKey !== 'null' && rawKey !== 'undefined') ? rawKey : '';
 
-  let source: 'vite' | 'inject' | 'none' = 'none';
+  let source: 'vite' | 'inject' | 'api' | 'none' = 'none';
   if (injectEnv.VITE_SUPABASE_URL && injectEnv.VITE_SUPABASE_URL !== 'null') source = 'inject';
   else if (metaEnv.VITE_SUPABASE_URL) source = 'vite';
 
@@ -34,14 +34,42 @@ function getSafeEnv() {
     debug: {
       hasUrl: !!url,
       hasKey: !!anonKey,
-      urlLength: url.length,
       injectEnvPresent: !!(window as any).ENV_CONFIG,
       metaEnvPresent: !!(import.meta as any).env?.VITE_SUPABASE_URL
     }
   };
 }
 
-export const SUPABASE_CONFIG = getSafeEnv();
+export let SUPABASE_CONFIG = getInitialEnv();
+
+/**
+ * Tenta carregar a configuração via API se não estiver disponível localmente.
+ * Isso resolve problemas de chaves configuradas após o build do cliente.
+ */
+export async function refreshSupabaseConfig(): Promise<SupabaseConfig> {
+  if (SUPABASE_CONFIG.isConfigured) return SUPABASE_CONFIG;
+
+  try {
+    console.log('[SUPABASE CONFIG] Tentando carregar chaves via API do servidor...');
+    const response = await fetch('/api/config/supabase');
+    const data = await response.json();
+    
+    if (data.isConfigured) {
+      SUPABASE_CONFIG = {
+        url: data.url,
+        anonKey: data.anonKey,
+        isConfigured: true,
+        source: 'api',
+        debug: { ...SUPABASE_CONFIG.debug, loadedViaApi: true }
+      };
+      console.log('[SUPABASE CONFIG] Chaves carregadas com sucesso via API.');
+    }
+  } catch (err) {
+    console.warn('[SUPABASE CONFIG] Falha ao buscar chaves via API:', err);
+  }
+
+  return SUPABASE_CONFIG;
+}
 
 if (!SUPABASE_CONFIG.isConfigured) {
   console.error(

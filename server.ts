@@ -87,6 +87,18 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Rota para expor chaves do Supabase para o frontend (necessário para o app online funcionar com segredos)
+app.get('/api/config/supabase', (req, res) => {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  
+  res.json({
+    url: supabaseUrl || '',
+    anonKey: supabaseAnonKey || '',
+    isConfigured: !!(supabaseUrl && supabaseAnonKey)
+  });
+});
+
 // Initialize Gemini
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,

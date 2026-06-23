@@ -5,12 +5,9 @@ import { SUPABASE_CONFIG } from './config';
 let supabaseInstance: ReturnType<typeof createClient> | null = null;
 
 export function getSupabase() {
-  if (!supabaseInstance) {
+  // Se não houver instância ou se a URL for inválida, tentamos inicializar
+  if (!supabaseInstance || (supabaseInstance as any).restUrl === '') {
     if (!SUPABASE_CONFIG.isConfigured) {
-      console.warn(
-        '[Supabase] URL ou Chave Anon estão faltando no arquivo de configuração.',
-        { url: !!SUPABASE_CONFIG.url, key: !!SUPABASE_CONFIG.anonKey, source: SUPABASE_CONFIG.source }
-      );
       return null;
     }
 
