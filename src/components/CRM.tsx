@@ -352,11 +352,6 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
         // Load dynamic stages synced from db
         const funnelStagesQuery = query(collection(db, 'funnel_stages'), where('ownerId', '==', user.uid));
         unsubFunnelStages = onSnapshot(funnelStagesQuery, (snapshot) => {
-          if (snapshot.empty) {
-            seedDefaultStages(user.uid);
-            return;
-          }
-
           const loadedStages = snapshot.docs.map(d => {
             const data = d.data();
             return {
@@ -367,9 +362,65 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
               originalColor: data.color
             };
           });
-          
+
+          if (snapshot.empty) {
+            seedDefaultStages(user.uid);
+            return;
+          }
+
           loadedStages.sort((a, b) => a.order - b.order);
-          updateStages(loadedStages);
+
+          // Smart merge: preserve and synchronize stages created offline/local
+          let finalStages = [...loadedStages];
+          let changed = false;
+
+          try {
+            const saved = localStorage.getItem('wa_crm_funnel_stages');
+            if (saved) {
+              const trimmed = saved.trim();
+              if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  parsed.forEach((localStage) => {
+                    const exists = loadedStages.some(
+                      (dbStage) => dbStage.id === localStage.id || dbStage.title.toLowerCase() === localStage.title.toLowerCase()
+                    );
+                    if (!exists) {
+                      const sId = localStage.id || `stage_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+                      const newOnlineStage = {
+                        id: sId,
+                        title: localStage.title,
+                        color: localStage.color || 'bg-neutral-500',
+                        order: localStage.order ?? finalStages.length,
+                        originalColor: localStage.color
+                      };
+                      finalStages.push(newOnlineStage);
+                      changed = true;
+
+                      // Upload to online DB
+                      const stageRef = doc(db, 'funnel_stages', `${user.uid}_${sId}`);
+                      setDoc(stageRef, {
+                        title: localStage.title,
+                        color: localStage.color || 'bg-neutral-500',
+                        order: localStage.order ?? finalStages.length,
+                        ownerId: user.uid,
+                        createdAt: new Date().toISOString()
+                      }, { merge: true }).catch(err => console.error("[CRM Sync] Error syncing local stage:", err));
+                    }
+                  });
+                }
+              }
+            }
+          } catch (e) {
+            console.error("[CRM Sync] Smart merge error:", e);
+          }
+
+          if (changed) {
+            finalStages.sort((a, b) => a.order - b.order);
+            updateStages(finalStages);
+          } else {
+            updateStages(loadedStages);
+          }
         });
       } else {
         setClinics([]);
@@ -546,27 +597,33 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                   <button 
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingStage(column);
                       setNewStageTitle(column.title);
                       setIsStageModalOpen(true);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded relative z-20 cursor-pointer"
+                    className="p-2 sm:p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded relative z-20 cursor-pointer touch-manipulation"
+                    title="Editar etapa"
                   >
-                    <Edit2 size={12} />
+                    <Edit2 size={14} className="sm:size-[12px]" />
                   </button>
                   <button 
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       setStageToDelete(column.id);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-20 cursor-pointer"
+                    className="p-2 sm:p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-20 cursor-pointer touch-manipulation"
+                    title="Excluir etapa"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={14} className="sm:size-[12px]" />
                   </button>
                   <span className="text-xs font-black text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full ml-1">
                     {filteredPatients.filter(p => isMatchStage(p.status, column.id)).length}

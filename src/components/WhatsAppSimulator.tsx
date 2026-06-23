@@ -453,12 +453,64 @@ export default function WhatsAppSimulator() {
         // Load funnel stages with auto-seeding
         const funnelStagesQuery = query(collection(db, 'funnel_stages'), where('ownerId', '==', user.uid));
         unsubFunnelStages = onSnapshot(funnelStagesQuery, async (snapshot) => {
-          const loadedStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const loadedStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
           console.log("onSnapshot funnel stages:", loadedStages);
           if (loadedStages.length === 0) {
             await seedDefaultStages(user.uid);
+            return;
+          }
+
+          loadedStages.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+
+          // Smart merge: preserve and synchronize stages created offline/local
+          let finalStages = [...loadedStages];
+          let changed = false;
+
+          try {
+            const saved = localStorage.getItem('wa_crm_funnel_stages');
+            if (saved) {
+              const trimmed = saved.trim();
+              if (trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '') {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  parsed.forEach((localStage: any) => {
+                    const exists = loadedStages.some(
+                      (dbStage: any) => dbStage.id === localStage.id || dbStage.title.toLowerCase() === localStage.title.toLowerCase()
+                    );
+                    if (!exists) {
+                      const sId = localStage.id || `stage_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+                      const newOnlineStage = {
+                        id: sId,
+                        title: localStage.title,
+                        color: localStage.color || 'bg-neutral-500',
+                        order: localStage.order ?? finalStages.length,
+                        ownerId: user.uid,
+                        createdAt: new Date().toISOString()
+                      };
+                      finalStages.push(newOnlineStage);
+                      changed = true;
+
+                      // Upload to online DB
+                      const stageRef = doc(db, 'funnel_stages', `${user.uid}_${sId}`);
+                      setDoc(stageRef, newOnlineStage, { merge: true }).catch(err => console.error("[WhatsAppSimulator Sync] Error syncing local stage:", err));
+                    }
+                  });
+                }
+              }
+            }
+          } catch (e) {
+            console.error("[WhatsAppSimulator Sync] Smart merge error:", e);
+          }
+
+          if (changed) {
+            finalStages.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+            setCrmStages(finalStages);
+            try {
+              localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(finalStages));
+            } catch (e) {
+              console.error("Erro ao salvar stages no localStorage:", e);
+            }
           } else {
-            loadedStages.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
             setCrmStages(loadedStages);
             try {
               localStorage.setItem('wa_crm_funnel_stages', JSON.stringify(loadedStages));
@@ -1944,31 +1996,39 @@ export default function WhatsAppSimulator() {
                                     <GripVertical size={12} />
                                   </div>
                                   <button 
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    onTouchEnd={(e) => e.stopPropagation()}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                        setEditingStage(stg);
-                                        setNewStageTitle(stg.title);
-                                        setNewStageColor(stg.color);
-                                        setStageModalMode('edit');
-                                        setIsStageModalOpen(true);
-                                      }}
-                                      className="p-1 hover:bg-neutral-150 text-neutral-400 hover:text-blue-600 rounded"
-                                      title="Editar etapa"
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3 L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                    </button>
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (window.confirm(`Deseja mesmo excluir a etapa "${stg.title}"?`)) {
-                                          handleDeleteStage(stg.id);
-                                        }
-                                      }}
-                                      className="p-1 hover:bg-neutral-150 text-neutral-400 hover:text-red-650 rounded"
-                                      title="Excluir etapa"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
+                                      setEditingStage(stg);
+                                      setNewStageTitle(stg.title);
+                                      setNewStageColor(stg.color);
+                                      setStageModalMode('edit');
+                                      setIsStageModalOpen(true);
+                                    }}
+                                    className="p-2 sm:p-1 hover:bg-neutral-150 text-neutral-400 hover:text-blue-600 rounded relative z-20 cursor-pointer touch-manipulation"
+                                    title="Editar etapa"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3 L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                  </button>
+                                  <button 
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    onTouchEnd={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (window.confirm(`Deseja mesmo excluir a etapa "${stg.title}"?`)) {
+                                        handleDeleteStage(stg.id);
+                                      }
+                                    }}
+                                    className="p-2 sm:p-1 hover:bg-[#128C7E]/10 text-neutral-400 hover:text-red-600 rounded relative z-20 cursor-pointer touch-manipulation"
+                                    title="Excluir etapa"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
                                   </div>
                                 </div>
                               );
