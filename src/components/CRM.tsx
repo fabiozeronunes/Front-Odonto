@@ -49,7 +49,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      setIsMobile(window.innerWidth < 1024);
     };
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -408,6 +408,9 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
 
   const handleUpdateStatus = async (patientId: string, newStatus: string) => {
     try {
+      // Optimistic / Immediate visual update for instant responsiveness in all viewports
+      setPatients(prev => prev.map(p => p.id === patientId ? { ...p, status: newStatus as any } : p));
+
       await updateDoc(doc(db, 'pacientes', patientId), {
         status: newStatus,
         lastContactAt: serverTimestamp()
@@ -520,14 +523,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="flex flex-col md:flex-row gap-4 pb-6 md:overflow-x-auto lg:overflow-x-visible lg:flex-wrap select-none min-h-[600px] custom-scrollbar scroll-smooth">
+        <div className="flex flex-row overflow-x-auto gap-4 pb-6 select-none min-h-[600px] custom-scrollbar scroll-smooth w-full">
           {stages.map((column, colIdx) => (
             <motion.div 
               key={column.id || colIdx}
               layout
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
-              className="space-y-4 w-full md:shrink-0 md:w-[320px] lg:w-[calc(33.333%-1rem)] xl:w-[calc(25%-1rem)] 2xl:w-[calc(20%-1rem)] transition-all duration-300 rounded-2xl p-1"
+              className="space-y-4 shrink-0 w-[290px] xs:w-[310px] sm:w-[320px] transition-all duration-300 rounded-2xl p-1"
             >
               <div 
                 draggable={!isMobile}
@@ -592,16 +595,38 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                         <h5 className="font-bold text-neutral-800 text-xs sm:sm">{patient.name}</h5>
                         <p className="text-[10px] text-neutral-400 font-medium">{patient.phone}</p>
                       </div>
-                      <div className="flex gap-1">
-                        {stages.filter(c => !isMatchStage(patient.status, c.id)).map(c => (
-                           <button 
-                            key={c.id}
-                            onClick={() => handleUpdateStatus(patient.id, c.id)}
-                            className={`w-2 h-2 rounded-full ${c.color || 'bg-blue-500'} opacity-30 hover:opacity-100 transition-opacity`}
-                            title={`Mover para ${c.title}`}
-                           />
-                        ))}
-                      </div>
+                      {isMobile ? (
+                        <div className="relative shrink-0">
+                          <select
+                            value={stages.find(c => isMatchStage(patient.status, c.id))?.id || ''}
+                            onChange={(e) => handleUpdateStatus(patient.id, e.target.value)}
+                            className="text-[10px] font-black bg-neutral-100 border border-neutral-200 text-neutral-600 rounded-lg px-2 py-1 pr-5 appearance-none cursor-pointer outline-none focus:ring-1 focus:ring-blue-500/20 max-w-[140px]"
+                            style={{
+                              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                              backgroundRepeat: 'no-repeat',
+                              backgroundPosition: 'right 4px center',
+                              backgroundSize: '10px'
+                            }}
+                          >
+                            {stages.map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1">
+                          {stages.filter(c => !isMatchStage(patient.status, c.id)).map(c => (
+                             <button 
+                              key={c.id}
+                              onClick={() => handleUpdateStatus(patient.id, c.id)}
+                              className={`w-2 h-2 rounded-full ${c.color || 'bg-blue-500'} opacity-30 hover:opacity-100 transition-opacity cursor-pointer`}
+                              title={`Mover para ${c.title}`}
+                             />
+                          ))}
+                        </div>
+                      )}
                     </div>
                     
                     <div className="flex flex-wrap items-center gap-2 mb-4">

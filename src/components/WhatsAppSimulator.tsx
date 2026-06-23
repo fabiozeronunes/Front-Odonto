@@ -775,6 +775,8 @@ export default function WhatsAppSimulator() {
     try {
       if (matchedPatient) {
         console.log("Updating existing patient:", matchedPatient.id);
+        // Optimistic local update
+        setPatients(prev => prev.map(p => p.id === matchedPatient.id ? { ...p, status: stage as any } : p));
         await updateDoc(doc(db, 'pacientes', matchedPatient.id), {
           status: stage,
           lastContactAt: serverTimestamp()
