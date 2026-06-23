@@ -86,6 +86,33 @@ export function snakeToCamel(obj: any): any {
 
 // Adaptação específica para compatibilidade de dados entre Firestore e as restrições e colunas do Supabase Postgres
 export function adaptInputData(table: string, data: any): any {
+  if (table === 'pacientes') {
+    const adapted = { ...data };
+    if (adapted.name !== undefined && adapted.nome === undefined) {
+      adapted.nome = adapted.name;
+    }
+    if (adapted.phone !== undefined && adapted.telefone === undefined) {
+      adapted.telefone = adapted.phone;
+    }
+    if (adapted.nome === undefined || adapted.nome === '') {
+      adapted.nome = 'Lead Sem Nome';
+    }
+    // Deletar colunas fantasmas que não existem na tabela do banco
+    delete adapted.name;
+    delete adapted.phone;
+    return adapted;
+  }
+
+  if (table === 'funnel_stages') {
+    const adapted = { ...data };
+    if (adapted.title !== undefined && adapted.name === undefined) {
+      adapted.name = adapted.title;
+    }
+    // Deletar coluna fantasma
+    delete adapted.title;
+    return adapted;
+  }
+
   if (table === 'quick_responses') {
     const adapted = { ...data };
     if (adapted.tag !== undefined && adapted.category === undefined) {
@@ -126,7 +153,28 @@ export function adaptInputData(table: string, data: any): any {
 }
 
 export function adaptOutputData(table: string, data: any): any {
-  if (table === 'quick_responses' && data) {
+  if (!data) return data;
+
+  if (table === 'pacientes') {
+    const adapted = { ...data };
+    if (adapted.nome !== undefined && adapted.name === undefined) {
+      adapted.name = adapted.nome;
+    }
+    if (adapted.telefone !== undefined && adapted.phone === undefined) {
+      adapted.phone = adapted.telefone;
+    }
+    return adapted;
+  }
+
+  if (table === 'funnel_stages') {
+    const adapted = { ...data };
+    if (adapted.name !== undefined && adapted.title === undefined) {
+      adapted.title = adapted.name;
+    }
+    return adapted;
+  }
+
+  if (table === 'quick_responses') {
     const adapted = { ...data };
     if (adapted.category !== undefined && adapted.tag === undefined) {
       adapted.tag = adapted.category;

@@ -497,7 +497,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
       await addDoc(collection(db, 'pacientes'), {
         ...newLead,
         ownerId: auth.currentUser?.uid,
-        status: 'lead',
+        status: stages[0]?.id || 'lead',
         lastContactAt: serverTimestamp(),
         createdAt: serverTimestamp(),
       });
