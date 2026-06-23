@@ -43,6 +43,8 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
   const [editingStage, setEditingStage] = useState<any | null>(null);
   const [newStageTitle, setNewStageTitle] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [stageToDelete, setStageToDelete] = useState<string | null>(null);
+  const [leadToDelete, setLeadToDelete] = useState<string | null>(null);
   
   // Dynamic stages state with localStorage loading
   const [stages, setStages] = useState<any[]>(() => {
@@ -248,9 +250,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
     setNewStageTitle('');
   };
 
-  const deleteStage = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir esta etapa? Pacientes nesta etapa serão movidos para a primeira etapa disponível.")) return;
-    
+  const confirmDeleteStage = async (id: string) => {
     const targetStage = stages.find(s => s.id === id);
     if (!targetStage) return;
 
@@ -283,6 +283,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
         console.error("Error deleting stage from Firestore:", err);
       }
     }
+    setStageToDelete(null);
   };
 
   // Form State
@@ -406,13 +407,8 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
     }
   };
 
-  const handleDeleteLead = async (e: React.MouseEvent, patientId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
+  const confirmDeleteLead = async (patientId: string) => {
     if (!patientId) return;
-
-    if (!window.confirm("Deseja realmente excluir este lead permanentemente?")) return;
     
     // Optimistic local update
     setPatients(prev => prev.filter(p => p?.id !== patientId));
@@ -421,8 +417,8 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
       await deleteDoc(doc(db, 'pacientes', patientId));
     } catch (error) {
       console.error("Error deleting lead:", error);
-      alert("Erro ao excluir do banco de dados. Tente novamente.");
     }
+    setLeadToDelete(null);
   };
 
   const handleCreateLead = async (e: React.FormEvent) => {
@@ -535,22 +531,27 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingStage(column);
                       setNewStageTitle(column.title);
                       setIsStageModalOpen(true);
                     }}
-                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded"
+                    className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-blue-500 rounded relative z-20"
                   >
                     <Edit2 size={12} />
                   </button>
                   <button 
                     onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      deleteStage(column.id);
+                      setStageToDelete(column.id);
                     }}
                     className="p-1 hover:bg-neutral-100 text-neutral-400 hover:text-red-500 rounded relative z-20"
                   >
@@ -660,9 +661,15 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                       <span className="text-[9px] text-neutral-400 font-bold uppercase">
                         {patient.lastContactAt ? 'Ativo' : 'Novo'}
                       </span>
-                      <button 
-                        onClick={(e) => handleDeleteLead(e, patient.id)}
+                       <button 
                         onMouseDown={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setLeadToDelete(patient.id);
+                        }}
                         draggable="false"
                         onDragStart={(e) => e.stopPropagation()}
                         className="text-[10px] text-red-500 hover:text-red-700 underline font-bold uppercase transition-colors"
@@ -774,24 +781,28 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
               onClick={() => setIsStageModalOpen(false)}
               className="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm"
             />
-            <motion.div 
+            <motion.form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                addStage();
+              }}
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6"
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 z-10"
             >
               <h3 className="text-lg font-bold mb-4">{editingStage ? 'Editar Etapa' : 'Adicionar Etapa'}</h3>
               <input 
-                autoFocus
+                required
                 type="text" 
                 placeholder="Título da etapa"
                 className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-2xl mb-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/20"
                 value={newStageTitle}
                 onChange={(e) => setNewStageTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addStage()}
               />
               <div className="flex gap-2 justify-end">
                 <button 
+                  type="button"
                   onClick={() => {
                     setIsStageModalOpen(false);
                     setEditingStage(null);
@@ -802,10 +813,90 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                   Cancelar
                 </button>
                 <button 
-                  onClick={addStage} 
+                  type="submit"
                   className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs shadow-md hover:bg-blue-700 active:scale-95 transition-all"
                 >
                   {editingStage ? 'Salvar Edição' : 'Salvar Etapa'}
+                </button>
+              </div>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Confirmação de Exclusão de Etapa */}
+      <AnimatePresence>
+        {stageToDelete && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setStageToDelete(null)}
+              className="absolute inset-0 bg-neutral-900/40 backdrop-blur-xs"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 border border-neutral-100 z-10"
+            >
+              <h3 className="text-lg font-bold text-neutral-900 mb-2">Excluir Etapa?</h3>
+              <p className="text-xs text-neutral-500 leading-relaxed mb-6">
+                Deseja realmente excluir esta etapa? Os pacientes que estiverem nesta etapa serão automaticamente movidos para a primeira etapa disponível da sua lista.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button 
+                  onClick={() => setStageToDelete(null)} 
+                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 rounded-xl text-xs font-bold text-neutral-600 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => confirmDeleteStage(stageToDelete)} 
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-xs shadow-md shadow-red-500/15 active:scale-95 transition-all"
+                >
+                  Confirmar Exclusão
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Confirmação de Exclusão de Lead */}
+      <AnimatePresence>
+        {leadToDelete && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLeadToDelete(null)}
+              className="absolute inset-0 bg-neutral-900/40 backdrop-blur-xs"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 border border-neutral-100 z-10"
+            >
+              <h3 className="text-lg font-bold text-neutral-900 mb-2">Excluir Lead Permanentemente?</h3>
+              <p className="text-xs text-neutral-500 leading-relaxed mb-6">
+                Esta ação é irreversível. O lead e todas as informações vinculadas a ele serão removidos do sistema.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button 
+                  onClick={() => setLeadToDelete(null)} 
+                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 rounded-xl text-xs font-bold text-neutral-600 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => confirmDeleteLead(leadToDelete)} 
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-xs shadow-md shadow-red-500/15 active:scale-95 transition-all"
+                >
+                  Excluir Lead
                 </button>
               </div>
             </motion.div>
