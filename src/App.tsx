@@ -545,6 +545,34 @@ export default function App() {
           </button>
         </div>
 
+        {/* Perfil e LogOut no Topo para mobile evitar sobreposição */}
+        <div className="px-4 pb-2">
+          <div className={`p-3 rounded-2xl bg-neutral-50 flex items-center ${(isSidebarOpen || window.innerWidth < 1024) ? 'gap-3' : 'justify-center'} border border-neutral-100`}>
+            {safeUser.photoURL ? (
+              <img src={safeUser.photoURL} alt="User" className="w-10 h-10 rounded-xl object-cover" />
+            ) : (
+              <div className="w-10 h-10 bg-blue-100 text-blue-700 font-bold flex items-center justify-center rounded-xl text-xs uppercase border border-blue-200 shrink-0">
+                {safeUser.displayName ? safeUser.displayName.substring(0, 2) : (safeUser.email ? safeUser.email.substring(0, 2) : 'US')}
+              </div>
+            )}
+            {(isSidebarOpen || window.innerWidth < 1024) && (
+              <div className="flex-1 overflow-hidden">
+                <p className="text-sm font-semibold truncate">{safeUser.displayName}</p>
+                <p className="text-xs text-neutral-400 truncate">{safeUser.email}</p>
+              </div>
+            )}
+            {(isSidebarOpen || window.innerWidth < 1024) && (
+              <button 
+                onClick={handleLogout} 
+                className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+                title="Sair"
+              >
+                <LogOut size={18} />
+              </button>
+            )}
+          </div>
+        </div>
+
         <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
           {menuItems.map((item) => {
             const hasSubitems = 'subItems' in item;
@@ -620,29 +648,6 @@ export default function App() {
             );
           })}
         </nav>
-
-        <div className="p-4 border-t border-neutral-100">
-          <div className={`p-3 rounded-2xl bg-neutral-50 flex items-center ${(isSidebarOpen || window.innerWidth < 1024) ? 'gap-3' : 'justify-center'}`}>
-            {safeUser.photoURL ? (
-              <img src={safeUser.photoURL} alt="User" className="w-10 h-10 rounded-xl object-cover" />
-            ) : (
-              <div className="w-10 h-10 bg-blue-100 text-blue-700 font-bold flex items-center justify-center rounded-xl text-xs uppercase border border-blue-200 shrink-0">
-                {safeUser.displayName ? safeUser.displayName.substring(0, 2) : (safeUser.email ? safeUser.email.substring(0, 2) : 'US')}
-              </div>
-            )}
-            {(isSidebarOpen || window.innerWidth < 1024) && (
-              <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-semibold truncate">{safeUser.displayName}</p>
-                <p className="text-xs text-neutral-400 truncate">{safeUser.email}</p>
-              </div>
-            )}
-            {(isSidebarOpen || window.innerWidth < 1024) && (
-              <button onClick={handleLogout} className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors">
-                <LogOut size={18} />
-              </button>
-            )}
-          </div>
-        </div>
       </aside>
 
       {/* Main Content */}

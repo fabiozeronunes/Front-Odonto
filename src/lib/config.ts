@@ -15,32 +15,65 @@ interface SupabaseConfig {
 function getInitialEnv(): SupabaseConfig {
   const metaEnv = (import.meta as any).env || {};
   const injectEnv = (window as any).ENV_CONFIG || {};
+  
+  // Tenta carregar do localStorage primeiro (prioridade para override manual)
+  const localUrl = localStorage.getItem('sb_url_override');
+  const localKey = localStorage.getItem('sb_key_override');
 
-  const rawUrl = injectEnv.VITE_SUPABASE_URL || metaEnv.VITE_SUPABASE_URL || '';
-  const rawKey = injectEnv.VITE_SUPABASE_ANON_KEY || metaEnv.VITE_SUPABASE_ANON_KEY || '';
+  const rawUrl = localUrl || injectEnv.VITE_SUPABASE_URL || metaEnv.VITE_SUPABASE_URL || '';
+  const rawKey = localKey || injectEnv.VITE_SUPABASE_ANON_KEY || metaEnv.VITE_SUPABASE_ANON_KEY || '';
 
   const url = (rawUrl && rawUrl !== 'null' && rawUrl !== 'undefined') ? rawUrl : '';
   const anonKey = (rawKey && rawKey !== 'null' && rawKey !== 'undefined') ? rawKey : '';
 
-  let source: 'vite' | 'inject' | 'api' | 'none' = 'none';
-  if (injectEnv.VITE_SUPABASE_URL && injectEnv.VITE_SUPABASE_URL !== 'null') source = 'inject';
+  let source: 'vite' | 'inject' | 'api' | 'manual' | 'none' = 'none';
+  if (localUrl) source = 'manual';
+  else if (injectEnv.VITE_SUPABASE_URL && injectEnv.VITE_SUPABASE_URL !== 'null') source = 'inject';
   else if (metaEnv.VITE_SUPABASE_URL) source = 'vite';
 
   return {
     url,
     anonKey,
     isConfigured: !!(url && anonKey && url.startsWith('http')),
-    source,
+    source: source as any,
     debug: {
       hasUrl: !!url,
       hasKey: !!anonKey,
       injectEnvPresent: !!(window as any).ENV_CONFIG,
-      metaEnvPresent: !!(import.meta as any).env?.VITE_SUPABASE_URL
+      metaEnvPresent: !!(import.meta as any).env?.VITE_SUPABASE_URL,
+      manualOverride: !!localUrl
     }
   };
 }
 
 export let SUPABASE_CONFIG = getInitialEnv();
+
+/**
+ * Salva chaves manualmente no localStorage e atualiza a configuração global.
+ */
+export function saveManualSupabaseConfig(url: string, anonKey: string) {
+  localStorage.setItem('sb_url_override', url);
+  localStorage.setItem('sb_key_override', anonKey);
+  
+  SUPABASE_CONFIG = {
+    url,
+    anonKey,
+    isConfigured: !!(url && anonKey && url.startsWith('http')),
+    source: 'manual',
+    debug: { ...SUPABASE_CONFIG.debug, manualOverride: true }
+  };
+  
+  console.log('[SUPABASE CONFIG] Chaves salvas manualmente no localStorage.');
+}
+
+/**
+ * Limpa as chaves manuais do localStorage.
+ */
+export function clearManualSupabaseConfig() {
+  localStorage.removeItem('sb_url_override');
+  localStorage.removeItem('sb_key_override');
+  SUPABASE_CONFIG = getInitialEnv();
+}
 
 /**
  * Tenta carregar a configuração via API se não estiver disponível localmente.

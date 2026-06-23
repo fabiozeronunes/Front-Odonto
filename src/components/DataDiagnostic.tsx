@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { Database, Search, RefreshCw, AlertTriangle, CheckCircle, CloudDownload, Info } from 'lucide-react';
+import { Database, Search, RefreshCw, AlertTriangle, CheckCircle, CloudDownload, Info, Settings } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { collection, getDocs, syncLegacyData, syncCloudToLocal } from '../lib/supabaseAdapter';
 import { SUPABASE_CONFIG, refreshSupabaseConfig } from '../lib/config';
+import { SupabaseConfigModal } from './SupabaseConfigModal';
 
 export const DataDiagnostic: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [supabaseStatus, setSupabaseStatus] = useState(SUPABASE_CONFIG);
   const [configError, setConfigError] = useState<string | null>(null);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   React.useEffect(() => {
     // Tenta carregar as chaves automaticamente ao carregar o componente
@@ -156,7 +158,7 @@ export const DataDiagnostic: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-24 left-4 md:bottom-4 md:right-4 z-[40]">
+    <div className="fixed bottom-28 right-4 md:bottom-6 md:right-6 z-[40]">
       <div className={`mb-2 bg-white border border-neutral-200 rounded-xl shadow-lg transition-all transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-90 opacity-0 pointer-events-none'}`}>
         <div className="p-4 w-64 space-y-3">
           <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Painel de Dados</p>
@@ -184,9 +186,17 @@ export const DataDiagnostic: React.FC = () => {
             {supabaseStatus.isConfigured && (
               <div className="text-[9px] text-neutral-400 italic flex items-center gap-1">
                 <Info size={10} />
-                Origem: {supabaseStatus.source === 'inject' ? 'Secrets' : (supabaseStatus.source === 'api' ? 'Servidor' : 'Bundle')}
+                Origem: {supabaseStatus.source === 'inject' ? 'Secrets' : (supabaseStatus.source === 'api' ? 'Servidor' : (supabaseStatus.source === 'manual' ? 'Manual (Local)' : 'Bundle'))}
               </div>
             )}
+            
+            <button 
+              onClick={() => setIsConfigModalOpen(true)}
+              className="w-full flex items-center gap-2 p-1 px-2 mt-1 hover:bg-neutral-100 rounded text-[10px] text-blue-600 font-bold transition-colors"
+            >
+              <Settings size={12} />
+              <span>Configurar Manualmente</span>
+            </button>
             
             {!supabaseStatus.isConfigured && (
               <div className="p-2 bg-amber-50 rounded border border-amber-100 flex flex-col gap-1">
@@ -247,6 +257,14 @@ export const DataDiagnostic: React.FC = () => {
         <Database size={14} />
         <span>Gestão de Dados</span>
       </button>
+
+      <SupabaseConfigModal 
+        isOpen={isConfigModalOpen} 
+        onClose={() => setIsConfigModalOpen(false)}
+        onSaved={() => {
+          setSupabaseStatus(SUPABASE_CONFIG);
+        }}
+      />
     </div>
   );
 };
