@@ -121,18 +121,18 @@ export default function QuickResponsesManager() {
           placeholder="Nova resposta..." 
           className="w-full sm:flex-1 p-4 bg-neutral-50 border border-neutral-200 rounded-2xl text-sm font-semibold text-neutral-800 focus:bg-white focus:border-neutral-900 outline-none transition-all" 
         />
-        <div className="flex gap-3 w-full sm:w-auto shrink-0">
+        <div className="flex flex-col min-[450px]:flex-row gap-3 w-full sm:w-auto shrink-0">
           <select 
             value={newTag} 
             onChange={(e) => setNewTag(e.target.value)} 
-            className="flex-1 sm:w-48 p-4 bg-neutral-50 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-800 outline-none focus:bg-white focus:border-neutral-900"
+            className="w-full min-[450px]:w-48 p-4 bg-neutral-50 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-800 outline-none focus:bg-white focus:border-neutral-900"
           >
             {categories.map(cat => <option key={cat}>{cat}</option>)}
           </select>
           <button 
             onClick={handleAdd} 
             disabled={isSaving} 
-            className="px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black uppercase text-xs transition-all cursor-pointer shadow-md shadow-emerald-500/10 shrink-0"
+            className="w-full min-[450px]:w-auto px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black uppercase text-xs transition-all cursor-pointer shadow-md shadow-emerald-500/10 shrink-0 text-center"
           >
             {isSaving ? '...' : 'Adicionar'}
           </button>
@@ -149,16 +149,18 @@ export default function QuickResponsesManager() {
                           onChange={(e) => setEditingText(e.target.value)} 
                           className="flex-1 p-3 bg-white border border-neutral-200 rounded-xl w-full text-sm font-semibold focus:border-neutral-900 outline-none"
                         />
-                        <div className="flex gap-2 w-full sm:w-auto shrink-0 justify-end">
+                        <div className="flex flex-col min-[400px]:flex-row gap-2 w-full sm:w-auto shrink-0 justify-end">
                           <select 
                             value={editingTag} 
                             onChange={(e) => setEditingTag(e.target.value)} 
-                            className="flex-1 sm:w-40 p-3 bg-white border border-neutral-200 rounded-xl text-xs font-bold text-neutral-800 outline-none"
+                            className="w-full min-[400px]:w-40 p-3 bg-white border border-neutral-200 rounded-xl text-xs font-bold text-neutral-800 outline-none"
                           >
                             {categories.map(cat => <option key={cat}>{cat}</option>)}
                           </select>
-                          <button onClick={() => handleEdit(r.id)} disabled={isSaving} className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all cursor-pointer"><Save size={18}/></button>
-                          <button onClick={() => setEditingId(null)} className="p-3 bg-red-100 text-red-600 rounded-xl hover:bg-red-200 transition-all cursor-pointer"><X size={18}/></button>
+                          <div className="flex gap-2 justify-end w-full min-[400px]:w-auto">
+                            <button onClick={() => handleEdit(r.id)} disabled={isSaving} className="flex-1 min-[400px]:flex-initial p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all cursor-pointer flex justify-center items-center"><Save size={18}/></button>
+                            <button onClick={() => setEditingId(null)} className="flex-1 min-[400px]:flex-initial p-3 bg-red-100 text-red-600 rounded-xl hover:bg-red-200 transition-all cursor-pointer flex justify-center items-center"><X size={18}/></button>
+                          </div>
                         </div>
                     </div>
                 ) : (

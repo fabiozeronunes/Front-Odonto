@@ -746,30 +746,32 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
                   
                   {activeConfigId === 'google' && (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between text-sm py-1 border-b border-neutral-50">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm py-2 border-b border-neutral-50 gap-1 sm:gap-4">
                         <span className="text-neutral-500">Conta autenticada</span>
-                        <span className="font-medium text-neutral-900">fabiozeronunes@gmail.com</span>
+                        <span className="font-medium text-neutral-900 break-all text-left sm:text-right">fabiozeronunes@gmail.com</span>
                       </div>
-                      <div className="flex items-center justify-between text-sm py-1 border-b border-neutral-50">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm py-2 border-b border-neutral-50 gap-1 sm:gap-4">
                         <span className="text-neutral-500">Perfil Google Ads</span>
-                        <span className="font-medium text-neutral-900">Clinic Front Odonto AI (832-192-3849)</span>
+                        <span className="font-medium text-neutral-900 text-left sm:text-right">Clinic Front Odonto AI (832-192-3849)</span>
                       </div>
                       
                       <div className="pt-2 space-y-2">
-                        <label className="flex items-center justify-between p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
-                          <span className="text-sm text-neutral-700">Importar métricas do Google Analytics (GA4)</span>
+                        <label className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
+                          <span className="text-sm text-neutral-700 text-left">Importar métricas do Google Analytics (GA4)</span>
                           <button 
                             onClick={() => handleToggle('google_analytics')}
-                            className={`w-11 h-6 rounded-full transition-all flex items-center px-1 ${toggles.google_analytics ? 'bg-blue-600' : 'bg-neutral-200'}`}
+                            className="w-11 h-6 rounded-full transition-all flex items-center px-1 shrink-0 bg-blue-600"
+                            style={{ backgroundColor: toggles.google_analytics ? '#2563eb' : '#e5e5e5' }}
                           >
                             <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${toggles.google_analytics ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
                         </label>
-                        <label className="flex items-center justify-between p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
-                          <span className="text-sm text-neutral-700">Rastrear conversões de leads em Anúncios</span>
+                        <label className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
+                          <span className="text-sm text-neutral-700 text-left">Rastrear conversões de leads em Anúncios</span>
                           <button 
                             onClick={() => handleToggle('google_ads')}
-                            className={`w-11 h-6 rounded-full transition-all flex items-center px-1 ${toggles.google_ads ? 'bg-blue-600' : 'bg-neutral-200'}`}
+                            className="w-11 h-6 rounded-full transition-all flex items-center px-1 shrink-0 bg-blue-600"
+                            style={{ backgroundColor: toggles.google_ads ? '#2563eb' : '#e5e5e5' }}
                           >
                             <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${toggles.google_ads ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
@@ -780,30 +782,32 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
 
                   {activeConfigId === 'agenda' && (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between text-sm py-1 border-b border-neutral-50">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm py-2 border-b border-neutral-50 gap-1 sm:gap-4">
                         <span className="text-neutral-500">E-mail associado</span>
-                        <span className="font-medium text-neutral-900">fabiozeronunes@gmail.com</span>
+                        <span className="font-medium text-neutral-900 break-all text-left sm:text-right">fabiozeronunes@gmail.com</span>
                       </div>
-                      <div className="flex items-center justify-between text-sm py-1 border-b border-neutral-50">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm py-2 border-b border-neutral-50 gap-1 sm:gap-4">
                         <span className="text-neutral-500">Calendário Primário</span>
-                        <span className="font-semibold text-indigo-600">Minhas Consultas (Front Odonto AI)</span>
+                        <span className="font-semibold text-indigo-600 text-left sm:text-right">Minhas Consultas (Front Odonto AI)</span>
                       </div>
                       
                       <div className="pt-2 space-y-2">
-                        <label className="flex items-center justify-between p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
-                          <span className="text-sm text-neutral-700">Sincronização bidirecional em tempo real</span>
+                        <label className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
+                          <span className="text-sm text-neutral-700 text-left">Sincronização bidirecional em tempo real</span>
                           <button 
                             onClick={() => handleToggle('calendar_two_way')}
-                            className={`w-11 h-6 rounded-full transition-all flex items-center px-1 ${toggles.calendar_two_way ? 'bg-indigo-600' : 'bg-neutral-200'}`}
+                            className="w-11 h-6 rounded-full transition-all flex items-center px-1 shrink-0 bg-indigo-600"
+                            style={{ backgroundColor: toggles.calendar_two_way ? '#4f46e5' : '#e5e5e5' }}
                           >
                             <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${toggles.calendar_two_way ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
                         </label>
-                        <label className="flex items-center justify-between p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
-                          <span className="text-sm text-neutral-700">Permitir marcação automática por IA</span>
+                        <label className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
+                          <span className="text-sm text-neutral-700 text-left">Permitir marcação automática por IA</span>
                           <button 
                             onClick={() => handleToggle('calendar_auto_write')}
-                            className={`w-11 h-6 rounded-full transition-all flex items-center px-1 ${toggles.calendar_auto_write ? 'bg-indigo-600' : 'bg-neutral-200'}`}
+                            className="w-11 h-6 rounded-full transition-all flex items-center px-1 shrink-0 bg-indigo-600"
+                            style={{ backgroundColor: toggles.calendar_auto_write ? '#4f46e5' : '#e5e5e5' }}
                           >
                             <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${toggles.calendar_auto_write ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
@@ -814,30 +818,32 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
 
                   {activeConfigId === 'facebook' && (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between text-sm py-1 border-b border-neutral-50">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm py-2 border-b border-neutral-50 gap-1 sm:gap-4">
                         <span className="text-neutral-500">Meta Business Manager</span>
-                        <span className="font-medium text-neutral-900">Clínica Front Odonto AI Principal</span>
+                        <span className="font-medium text-neutral-900 text-left sm:text-right">Clínica Front Odonto AI Principal</span>
                       </div>
-                      <div className="flex items-center justify-between text-sm py-1 border-b border-neutral-50">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm py-2 border-b border-neutral-50 gap-1 sm:gap-4">
                         <span className="text-neutral-500">ID Pixel Ativo</span>
-                        <span className="font-medium text-neutral-900">2938491029384</span>
+                        <span className="font-medium text-neutral-900 text-left sm:text-right">2938491029384</span>
                       </div>
                       
                       <div className="pt-2 space-y-2">
-                        <label className="flex items-center justify-between p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
-                          <span className="text-sm text-neutral-700">Importar Leads do Facebook em tempo real</span>
+                        <label className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
+                          <span className="text-sm text-neutral-700 text-left">Importar Leads do Facebook em tempo real</span>
                           <button 
                             onClick={() => handleToggle('meta_lead_sync')}
-                            className={`w-11 h-6 rounded-full transition-all flex items-center px-1 ${toggles.meta_lead_sync ? 'bg-blue-700' : 'bg-neutral-200'}`}
+                            className="w-11 h-6 rounded-full transition-all flex items-center px-1 shrink-0 bg-blue-700"
+                            style={{ backgroundColor: toggles.meta_lead_sync ? '#1d4ed8' : '#e5e5e5' }}
                           >
                             <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${toggles.meta_lead_sync ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
                         </label>
-                        <label className="flex items-center justify-between p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
-                          <span className="text-sm text-neutral-700">Habilitar Pixel de Rastreamento Avançado</span>
+                        <label className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
+                          <span className="text-sm text-neutral-700 text-left">Habilitar Pixel de Rastreamento Avançado</span>
                           <button 
                             onClick={() => handleToggle('meta_pixel')}
-                            className={`w-11 h-6 rounded-full transition-all flex items-center px-1 ${toggles.meta_pixel ? 'bg-blue-700' : 'bg-neutral-200'}`}
+                            className="w-11 h-6 rounded-full transition-all flex items-center px-1 shrink-0 bg-blue-700"
+                            style={{ backgroundColor: toggles.meta_pixel ? '#1d4ed8' : '#e5e5e5' }}
                           >
                             <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${toggles.meta_pixel ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
@@ -848,17 +854,18 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
 
                   {activeConfigId === 'tiktok' && (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between text-sm py-1 border-b border-neutral-50">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm py-2 border-b border-neutral-50 gap-1 sm:gap-4">
                         <span className="text-neutral-500">TikTok Business Center</span>
-                        <span className="font-medium text-neutral-900">Front Odonto AI HQ (Advertiser ID: 718294)</span>
+                        <span className="font-medium text-neutral-900 text-left sm:text-right">Front Odonto AI HQ (Advertiser ID: 718294)</span>
                       </div>
                       
                       <div className="pt-2 space-y-2">
-                        <label className="flex items-center justify-between p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
-                          <span className="text-sm text-neutral-700">Sincronização de TikTok Conversion API</span>
+                        <label className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 hover:bg-neutral-50 rounded-xl cursor-pointer transition-colors">
+                          <span className="text-sm text-neutral-700 text-left">Sincronização de TikTok Conversion API</span>
                           <button 
                             onClick={() => handleToggle('tiktok_conversion')}
-                            className={`w-11 h-6 rounded-full transition-all flex items-center px-1 ${toggles.tiktok_conversion ? 'bg-black' : 'bg-neutral-200'}`}
+                            className="w-11 h-6 rounded-full transition-all flex items-center px-1 shrink-0 bg-black"
+                            style={{ backgroundColor: toggles.tiktok_conversion ? '#000000' : '#e5e5e5' }}
                           >
                             <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${toggles.tiktok_conversion ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
@@ -870,14 +877,14 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
 
                 {/* Diagnostic Area */}
                 <div className="border border-neutral-200 rounded-2xl p-4 bg-neutral-50">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex flex-col min-[400px]:flex-row min-[400px]:items-center justify-between gap-2 mb-3">
                     <span className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-                      <Shield size={16} className="text-blue-600" />
-                      Diagnóstico & Status de Rede
+                      <Shield size={16} className="text-blue-600 shrink-0" />
+                      Diagnóstico & Rede
                     </span>
                     <button 
                       onClick={testDiagnostic}
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                      className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 self-start min-[400px]:self-auto"
                       disabled={checkingStatus}
                     >
                       {checkingStatus ? 'Testando...' : 'Re-testar Rede'}
@@ -886,16 +893,16 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
                   
                   {checkingStatus ? (
                     <div className="flex items-center gap-2 text-xs text-neutral-500">
-                      <RefreshCw size={12} className="animate-spin text-blue-600" />
-                      Verificando credenciais OAuth e credenciais da API remota...
+                      <RefreshCw size={12} className="animate-spin text-blue-600 shrink-0" />
+                      Verificando credenciais e API remota...
                     </div>
                   ) : checkResult ? (
                     <div className="space-y-2">
                       <div className="flex items-center gap-1.5 text-xs text-green-700 font-medium">
                         <Check size={14} className="bg-green-100 rounded-full p-0.5 shrink-0 text-green-700" />
-                        Conectado com sucesso! Sem erros detectados de permissão.
+                        Conectado com sucesso! Sem erros detectados.
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-400 bg-white p-2 rounded-lg border border-neutral-100 mt-2">
+                      <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2 text-[11px] text-neutral-400 bg-white p-2.5 rounded-lg border border-neutral-100 mt-2">
                         <div>Sincronizador: <strong className="text-neutral-600">Ativo</strong></div>
                         <div>Latência: <strong className="text-neutral-600">{customLatency || 124}ms</strong></div>
                         <div>Protocolo: <strong className="text-neutral-600">HTTPS (TLS 1.3)</strong></div>
