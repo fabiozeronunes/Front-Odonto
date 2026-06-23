@@ -302,7 +302,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
 
   const chartData = stages.map(stage => ({
     name: stage.title,
-    leads: patients.filter(p => p && (p.status || 'lead') === stage.id).length
+    leads: patients.filter(p => p && p.status && isMatchStage(p.status, stage.id)).length
   }));
 
   useEffect(() => {
@@ -468,14 +468,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm">
-        <h3 className="font-semibold text-neutral-800 mb-4">Pipeline de Leads</h3>
-        <div className="h-48">
+      <div className="bg-white p-4 sm:p-6 rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+        <h3 className="font-semibold text-neutral-800 mb-4 text-sm sm:text-base">Pipeline de Leads</h3>
+        <div className="h-44 sm:h-48">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis fontSize={12} tickLine={false} axisLine={false} />
+              <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} />
+              <YAxis fontSize={10} tickLine={false} axisLine={false} />
               <Tooltip cursor={{fill: '#f5f5f5'}} />
               <Bar dataKey="leads" fill="#3b82f6" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -523,14 +523,14 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
           <Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
-        <div className="flex flex-row overflow-x-auto gap-4 pb-6 select-none min-h-[600px] custom-scrollbar scroll-smooth w-full">
+        <div className="flex flex-row overflow-x-auto gap-4 pb-6 select-none min-h-[600px] custom-scrollbar scroll-smooth w-full snap-x snap-mandatory">
           {stages.map((column, colIdx) => (
             <motion.div 
               key={column.id || colIdx}
               layout
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleColumnDrop(e, column.id, colIdx)}
-              className="space-y-4 shrink-0 w-[290px] xs:w-[310px] sm:w-[320px] transition-all duration-300 rounded-2xl p-1"
+              className="space-y-4 shrink-0 w-[290px] xs:w-[310px] sm:w-[320px] transition-all duration-300 rounded-2xl p-1 snap-center"
             >
               <div 
                 draggable={!isMobile}
@@ -652,7 +652,7 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                     </div>
 
                     <div className="flex items-center justify-between pt-3 border-t border-neutral-50">
-                      <div className="flex -space-x-2">
+                      <div className="flex gap-1.5">
                         <button 
                           onClick={async () => {
                             if (patient.phone) {
@@ -683,11 +683,11 @@ export default function CRM({ onNavigate }: { onNavigate: (tab: string) => void 
                               onNavigate('whatsapp');
                             }
                           }}
-                          className="p-1.5 rounded-full bg-neutral-50 text-neutral-400 hover:text-blue-500 hover:bg-blue-50 transition-colors border-2 border-white"
+                          className="p-1.5 rounded-lg bg-neutral-50 text-neutral-400 hover:text-blue-500 hover:bg-blue-50 transition-colors border border-neutral-100"
                         >
                           <MessageCircle size={14} />
                         </button>
-                        <button className="p-1.5 rounded-full bg-neutral-50 text-neutral-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors border-2 border-white">
+                        <button className="p-1.5 rounded-lg bg-neutral-50 text-neutral-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors border border-neutral-100">
                           <Phone size={14} />
                         </button>
                       </div>

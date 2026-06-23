@@ -236,6 +236,45 @@ function saveMockStorage(table: string, data: any[]) {
   }
 }
 
+function saveDocToCache(table: string, doc: any) {
+  if (typeof window === 'undefined') return;
+  
+  // 1. Atualiza cache de produção
+  const current = getSupabaseCache(table);
+  const idx = current.findIndex(item => item.id === doc.id);
+  const docWithSyncFlag = { ...doc, _synced: doc._synced !== undefined ? doc._synced : false };
+  if (idx !== -1) {
+    current[idx] = { ...current[idx], ...docWithSyncFlag };
+  } else {
+    current.push(docWithSyncFlag);
+  }
+  setSupabaseCache(table, current);
+
+  // 2. Atualiza armazenamento local mock
+  const store = getMockStorage(table);
+  const storeIdx = store.findIndex(item => item.id === doc.id);
+  if (storeIdx !== -1) {
+    store[storeIdx] = { ...store[storeIdx], ...doc };
+  } else {
+    store.push(doc);
+  }
+  saveMockStorage(table, store);
+}
+
+function removeDocFromCache(table: string, id: string) {
+  if (typeof window === 'undefined') return;
+  
+  // 1. Remove do cache de produção
+  const current = getSupabaseCache(table);
+  const updated = current.filter(item => item.id !== id);
+  setSupabaseCache(table, updated);
+
+  // 2. Remove do armazenamento local mock
+  const store = getMockStorage(table);
+  const storeFiltered = store.filter(item => item.id !== id);
+  saveMockStorage(table, storeFiltered);
+}
+
 // --- TIPOS DE REFERÊNCIAS ---
 export interface CollectionReference {
   type: 'collection';
@@ -399,17 +438,59 @@ async function fetchAndTrigger(listener: ActiveListener) {
     } else {
       const data = await executeSupabaseQuery(listener.queryRef);
       
-      // Atualiza o cache global da tabela com os resultados mais recentes da rede
-      // Nota: Idealmente faríamos um merge cuidadoso, mas para sincronização completa de tabela, sobrepor é seguro.
       if (firestoreCollection !== 'system') {
         const currentCache = getSupabaseCache(table);
-        // Merge simples: atualiza existentes ou adiciona novos
-        const newCacheMap = new Map(currentCache.map(i => [i.id, i]));
-        data.forEach(item => newCacheMap.set(item.id, item));
-        setSupabaseCache(table, Array.from(newCacheMap.values()));
+        const serverIds = new Set(data.map(item => item.id));
+        
+        // 1. Identifica itens que combinam com os filtros da query atual no cache local
+        const matchingCachedItems = applyLocalFilters(currentCache, listener.queryRef);
+        const matchingCachedIds = new Set(matchingCachedItems.map(item => item.id));
+        
+        // 2. Constrói a nova lista consolidada do cache
+        const updatedCacheList: any[] = [];
+        
+        // Mantém intocados todos os itens que NÃO pertencem a esta query específica
+        currentCache.forEach(item => {
+          if (!matchingCachedIds.has(item.id)) {
+            updatedCacheList.push(item);
+          }
+        });
+        
+        // Para os itens desta query, mescla inteligentemente os dados remotos e locais
+        matchingCachedItems.forEach(item => {
+          if (serverIds.has(item.id)) {
+            // Existe no servidor: atualiza com os dados do servidor e marca como sincronizado
+            const serverItem = data.find(s => s.id === item.id);
+            updatedCacheList.push({ ...item, ...serverItem, _synced: true });
+          } else if (item._synced === false) {
+            // Criado/editado localmente mas ainda não persistido na nuvem: mantém visível
+            updatedCacheList.push(item);
+          }
+          // Caso contrário, se estava marcado como sincronizado anteriormente mas sumiu do servidor,
+          // consideramos que foi deletado remotamente e não o reinserimos no cache.
+        });
+        
+        // Adiciona itens novos que estão no servidor mas por algum motivo não estavam no cache
+        const cacheIds = new Set(updatedCacheList.map(item => item.id));
+        data.forEach(item => {
+          if (!cacheIds.has(item.id)) {
+            updatedCacheList.push({ ...item, _synced: true });
+          }
+        });
+        
+        setSupabaseCache(table, updatedCacheList);
+        
+        // Sincroniza também o storage do mock local para consistência perfeita
+        saveMockStorage(table, updatedCacheList);
       }
 
-      const docs = data.map(item => ({
+      // Agora entregamos os dados resultantes do cache consolidado e devidamente filtrados.
+      // Isso garante que registros criados/editados localmente persistam na tela sob qualquer estado assíncrono!
+      const finalItems = firestoreCollection !== 'system'
+        ? applyLocalFilters(getSupabaseCache(table), listener.queryRef)
+        : data;
+
+      const docs = finalItems.map(item => ({
         id: item.id,
         exists: () => true,
         data: () => item
@@ -552,6 +633,9 @@ export async function addDoc(collectionRef: any, data: any) {
     pgData.created_at = new Date().toISOString();
   }
 
+  // Salva no cache local e de mock imediatamente antes de enviar para o servidor
+  saveDocToCache(table, { id, ...data, createdAt: pgData.created_at, _synced: false });
+
   const { error } = await supabase
     .from(table)
     .insert([pgData]);
@@ -603,6 +687,11 @@ export async function setDoc(docRef: any, data: any, options?: any) {
   const adaptedData = adaptInputData(table, data);
   const pgData = camelToSnake({ id, ...adaptedData });
 
+  // Salva no cache local e de mock imediatamente antes de enviar para o servidor
+  const existingCache = getSupabaseCache(table).find(item => item.id === id);
+  const mergedData = options?.merge && existingCache ? { ...existingCache, ...data } : { id, ...data };
+  saveDocToCache(table, { ...mergedData, _synced: false });
+
   console.log(`[SupabaseAdapter] Executando setDoc na tabela ${table} para ID ${id}. Dados:`, pgData);
 
   const { error } = await supabase
@@ -647,6 +736,11 @@ export async function updateDoc(docRef: any, data: any) {
   // Evita alterar o ID primário
   delete pgData.id;
 
+  // Salva no cache local e de mock imediatamente antes de enviar para o servidor
+  const existingCache = getSupabaseCache(table).find(item => item.id === id);
+  const mergedData = existingCache ? { ...existingCache, ...data } : { id, ...data };
+  saveDocToCache(table, { ...mergedData, _synced: false });
+
   const { error } = await supabase
     .from(table)
     .update(pgData)
@@ -679,6 +773,9 @@ export async function deleteDoc(docRef: any) {
     triggerListenersForTable(docRef.path);
     return;
   }
+
+  // Deleta do cache local e de mock imediatamente antes de enviar para o servidor
+  removeDocFromCache(table, id);
 
   const { error } = await supabase
     .from(table)

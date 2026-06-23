@@ -23,12 +23,38 @@ const formatCadastroDate = (isoString?: string) => {
 };
 
 export default function PatientManager() {
-  const [patients, setPatients] = useState<any[]>([]);
+  const [patients, setPatients] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('pm_patients_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [showForm, setShowForm] = useState(false);
   const [editingPatient, setEditingPatient] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [dentists, setDentists] = useState<any[]>([]);
+  const [dentists, setDentists] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('pm_dentists_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [patientToDelete, setPatientToDelete] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (patients.length > 0) {
+      localStorage.setItem('pm_patients_cache', JSON.stringify(patients));
+    }
+  }, [patients]);
+
+  useEffect(() => {
+    if (dentists.length > 0) {
+      localStorage.setItem('pm_dentists_cache', JSON.stringify(dentists));
+    }
+  }, [dentists]);
 
   useEffect(() => {
     const patientId = localStorage.getItem('selectedPatient');
@@ -42,32 +68,66 @@ export default function PatientManager() {
   }, [patients]);
   
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    let unsubSnapshot: (() => void) | null = null;
+    let unsubDentists: (() => void) | null = null;
+
+    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+      // Clean up previous listeners if any
+      if (unsubSnapshot) {
+        unsubSnapshot();
+        unsubSnapshot = null;
+      }
+      if (unsubDentists) {
+        unsubDentists();
+        unsubDentists = null;
+      }
+
       if (user) {
-        const q = query(
+        // Query for patients
+        const qPacientes = query(
           collection(db, 'pacientes'), 
-          where('ownerId', '==', user.uid),
-          orderBy('createdAt', 'desc')
+          where('ownerId', '==', user.uid)
         );
-        const unsubSnapshot = onSnapshot(q, (snapshot) => {
-          setPatients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        unsubSnapshot = onSnapshot(qPacientes, (snapshot) => {
+          const ptList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          // Ordenar localmente por data de criação decrescente
+          ptList.sort((a: any, b: any) => {
+            const dateA = a.createdAt || a.created_at || '';
+            const dateB = b.createdAt || b.created_at || '';
+            return dateB.localeCompare(dateA);
+          });
+          setPatients(ptList);
+        }, (error) => {
+          console.error("Erro ao escutar pacientes:", error);
         });
-        return () => unsubSnapshot();
+
+        // Query for dentists
+        const qDentists = query(
+          collection(db, 'dentists'), 
+          where('ownerId', '==', user.uid)
+        );
+        unsubDentists = onSnapshot(qDentists, (snapshot) => {
+          setDentists(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }, (error) => {
+          console.error("Erro ao escutar dentistas:", error);
+        });
       } else {
-        setPatients([]);
+        // Only clear if there is indeed no logged in user in localStorage (i.e. explicit logout)
+        const hasSavedUser = localStorage.getItem('supabase_mock_user') || localStorage.getItem('google_demo_logged_in_v1') === 'true';
+        if (!hasSavedUser) {
+          setPatients([]);
+          setDentists([]);
+          localStorage.removeItem('pm_patients_cache');
+          localStorage.removeItem('pm_dentists_cache');
+        }
       }
     });
-    return () => unsubscribe();
-  }, []);
 
-  useEffect(() => {
-    if (auth.currentUser) {
-      const q = query(collection(db, 'dentists'), where('ownerId', '==', auth.currentUser.uid));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        setDentists(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      return () => unsubscribe();
-    }
+    return () => {
+      unsubscribeAuth();
+      if (unsubSnapshot) unsubSnapshot();
+      if (unsubDentists) unsubDentists();
+    };
   }, []);
 
   const filteredPatients = patients.filter(p =>

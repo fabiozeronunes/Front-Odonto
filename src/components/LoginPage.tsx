@@ -500,6 +500,51 @@ export default function LoginPage({ onLogin, onBack }: Props) {
         )}
         
         <div className="mt-6 pt-6 border-t border-neutral-800 space-y-3">
+          <button
+            type="button"
+            onClick={async () => {
+              setLoading(true);
+              setError(null);
+              const testEmail = 'teste@frontodonto.com.br';
+              const testPassword = 'teste123';
+              try {
+                console.log("[Auth Test] Attempting sign in with test account...");
+                await signInWithEmailAndPassword(auth, testEmail, testPassword);
+                onLogin();
+              } catch (signInErr: any) {
+                if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
+                  console.log("[Auth Test] Test account not found, auto-registering in production...");
+                  try {
+                    const userCredential = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
+                    const user = userCredential.user;
+                    await updateProfile(user, {
+                      displayName: 'Dentista de Teste'
+                    });
+                    const userDocRef = doc(db, 'users', user.uid);
+                    await robustSetDoc(userDocRef, {
+                      nome: 'Dentista de Teste',
+                      email: testEmail,
+                      createdAt: new Date().toISOString()
+                    });
+                    onLogin('user_registration');
+                  } catch (regErr: any) {
+                    console.error("[Auth Test] Failed to register test account:", regErr);
+                    setError('Falha ao inicializar a conta de teste. Tente novamente.');
+                  }
+                } else {
+                  console.error("[Auth Test] Error signing in:", signInErr);
+                  setError(translateError(signInErr.code || signInErr.message));
+                }
+              } finally {
+                setLoading(false);
+              }
+            }}
+            className="w-full flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold transition-colors cursor-pointer shadow-lg shadow-emerald-600/20"
+          >
+            <Stethoscope className="w-5 h-5" />
+            <span>Acessar Conta de Teste (Produção)</span>
+          </button>
+
           <button 
             onClick={handleGoogleAuth}
             disabled={loading}

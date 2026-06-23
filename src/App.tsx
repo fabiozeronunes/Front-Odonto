@@ -80,10 +80,12 @@ export default function App() {
       setUser(null);
       setView('landing');
       localStorage.removeItem('logged_in_view');
+      localStorage.removeItem('active_session_id');
     } catch (error) {
       console.error('Erro ao sair:', error);
       setUser(null);
       setView('landing');
+      localStorage.removeItem('active_session_id');
     }
   };
 
@@ -104,6 +106,16 @@ export default function App() {
     const unsubscribe = onSnapshot(userDocRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        
+        // --- MULTI-DEVICE SESSION TERMINATION ---
+        const localSessionId = localStorage.getItem('active_session_id');
+        if (data.activeSessionId && localSessionId && data.activeSessionId !== localSessionId) {
+          console.warn('[App] Sessão encerrada: Conectado em outro dispositivo.');
+          alert('Sessão encerrada: Você se conectou em outro dispositivo.');
+          handleLogout();
+          return;
+        }
+
         if (data.nome && data.nome !== user.displayName) {
           console.log('[App] Perfil atualizado no banco, sincronizando UI:', data.nome);
           setUser(prev => prev ? { ...prev, displayName: data.nome } : null);
@@ -210,6 +222,20 @@ export default function App() {
         localStorage.setItem('logged_in_view', 'dashboard');
         localStorage.setItem('google_demo_logged_in_v1', 'true');
         return;
+      }
+
+      if (u) {
+        let currentSessionId = localStorage.getItem('active_session_id');
+        if (!currentSessionId) {
+          const randId = Math.random().toString(36).substring(2, 11) + '-' + Date.now();
+          currentSessionId = crypto.randomUUID ? crypto.randomUUID() : randId;
+          localStorage.setItem('active_session_id', currentSessionId);
+          
+          const userDocRef = doc(db, 'users', u.uid);
+          setDoc(userDocRef, { activeSessionId: currentSessionId }, { merge: true }).catch((err) => {
+            console.warn('[App] Erro ao persistir activeSessionId:', err);
+          });
+        }
       }
 
       setUser(u);
@@ -427,7 +453,7 @@ export default function App() {
     { id: 'ads', label: 'ANÚNCIOS AI', icon: Megaphone },
     { id: 'whatsapp', label: 'AGENTE WHATSAPP', icon: MessageSquare },
     { id: 'agenda', label: 'AGENDA', icon: Calendar },
-    { id: 'crm', label: 'CRM / FUNIL', icon: Users },
+    { id: 'crm', label: 'CRM', icon: Users },
     { id: 'connections', label: 'CONEXÕES', icon: Link2 },
     { id: 'ai_ads_connections', label: 'CONEXÕES AI ADS', icon: Sparkles },
     { id: 'ai_connections', label: 'CONEXÃO AI', icon: Brain },

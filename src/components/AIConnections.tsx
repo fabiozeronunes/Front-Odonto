@@ -298,7 +298,7 @@ export default function AIConnections() {
   const activeCollection = activeTab === 'paid' ? paidAIs : freeAIs;
 
   return (
-    <div className="space-y-8" id="ai-connections-wrapper">
+    <div className="connections-page-wrapper space-y-8" id="ai-connections-wrapper">
       {/* Top Description Pane */}
       <div className="bg-gradient-to-br from-blue-900 to-indigo-950 text-white rounded-3xl p-8 relative overflow-hidden shadow-xl">
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>

@@ -249,7 +249,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
   });
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+    <div className="connections-page-wrapper max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
       <div className="flex justify-between items-center bg-white p-4 sm:p-8 rounded-3xl shadow-sm border border-neutral-100 italic">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 mb-2">
@@ -268,10 +268,10 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
       </div>
 
       {type !== 'ads' && (
-        <div className="flex border-b border-neutral-200">
+        <div className="flex border-b border-neutral-200 overflow-x-auto scrollbar-none whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0">
           <button
             onClick={() => setSubTab('integrations')}
-            className={`px-6 py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 ${
+            className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 shrink-0 ${
               subTab === 'integrations'
                 ? 'border-neutral-900 text-neutral-900 font-extrabold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-600'
@@ -283,7 +283,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
           <button
             id="notification-settings-tab"
             onClick={() => setSubTab('notifications')}
-            className={`px-6 py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 ${
+            className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 shrink-0 ${
               subTab === 'notifications'
                 ? 'border-emerald-500 text-emerald-600 font-extrabold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-500'
@@ -294,7 +294,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
           </button>
           <button
             onClick={() => setSubTab('quick_responses')}
-            className={`px-6 py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 ${
+            className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all border-b-2 -mb-px flex items-center gap-2 shrink-0 ${
               subTab === 'quick_responses'
                 ? 'border-emerald-500 text-emerald-600 font-extrabold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-500'
@@ -313,7 +313,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
           className="space-y-6"
         >
           {/* Card de Configuração Central */}
-          <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] shadow-sm border border-neutral-100 space-y-8">
+          <div className="bg-white p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] shadow-sm border border-neutral-100 space-y-6 sm:space-y-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-neutral-100">
               <div className="flex items-start gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
@@ -537,16 +537,16 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
             </div>
 
             {/* Botão de Salvar e Feedback */}
-            <div className="flex items-center justify-between pt-6 border-t border-neutral-100 gap-4">
-              <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-6 border-t border-neutral-100 gap-4">
+              <div className="w-full sm:w-auto">
                 {showSaveSuccess && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 px-3.5 py-2 rounded-xl font-bold"
+                    className="flex items-center justify-center sm:justify-start gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 px-3.5 py-2 rounded-xl font-bold w-full"
                   >
                     <Check size={14} className="text-emerald-600 font-black" />
-                    Configurações salvas com sucesso no navegador!
+                    Configurações salvas com sucesso!
                   </motion.div>
                 )}
               </div>
@@ -554,7 +554,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
               <button
                 type="button"
                 onClick={handleSaveNotificationSettings}
-                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-md shadow-emerald-500/10 cursor-pointer"
+                className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 cursor-pointer"
               >
                 <Save size={16} />
                 Salvar Configurações
@@ -653,20 +653,20 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
       )}
 
       {showConfigGuide && (
-        <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <motion.div 
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-white rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl border border-neutral-100"
+            className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-xl shadow-2xl border border-neutral-100 max-h-[90vh] flex flex-col overflow-hidden"
           >
-            <div className="p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
+            <div className="p-5 sm:p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50 shrink-0">
               <h2 className="text-lg font-bold text-neutral-900">Como Configurar OAuth 2.0</h2>
               <button onClick={() => setShowConfigGuide(false)} className="p-2 hover:bg-neutral-200 text-neutral-400 hover:text-neutral-600 rounded-xl transition-colors cursor-pointer">
                 <X size={20} />
               </button>
             </div>
-            <div className="p-6 space-y-4 text-sm text-neutral-700 leading-relaxed">
+            <div className="p-5 sm:p-6 space-y-4 text-sm text-neutral-700 leading-relaxed overflow-y-auto flex-1">
               <p>Para sincronizar sua agenda com o Google Calendar:</p>
               <ol className="list-decimal list-inside space-y-2">
                 <li>Acesse o <a href="https://console.cloud.google.com" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">Google Cloud Console</a>.</li>
@@ -677,10 +677,10 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
                 <li>Use o ID do Cliente obtido para configurar sua aplicação.</li>
               </ol>
             </div>
-            <div className="bg-neutral-50 p-6 border-t border-neutral-100">
+            <div className="bg-neutral-50 p-5 sm:p-6 border-t border-neutral-100 shrink-0">
               <button 
                 onClick={() => setShowConfigGuide(false)}
-                className="w-full px-4 py-2.5 bg-neutral-900 text-white hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-all"
+                className="w-full px-4 py-2.5 bg-neutral-900 text-white hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-all cursor-pointer"
               >
                 Entendido
               </button>
@@ -696,15 +696,15 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
         const mainName = activeIntegration.name.split(' ')[0];
         
         return (
-          <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-neutral-100"
+              className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg shadow-2xl border border-neutral-100 max-h-[90vh] flex flex-col overflow-hidden"
             >
               {/* Header */}
-              <div className="p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
+              <div className="p-5 sm:p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${activeIntegration.color}`}>
                     <activeIntegration.icon size={20} />
@@ -716,17 +716,17 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
                 </div>
                 <button 
                   onClick={() => setActiveConfigId(null)} 
-                  className="p-2 hover:bg-neutral-200 text-neutral-400 hover:text-neutral-600 rounded-xl transition-colors"
+                  className="p-2 hover:bg-neutral-200 text-neutral-400 hover:text-neutral-600 rounded-xl transition-colors cursor-pointer"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              {/* Status Indicator */}
-              <div className="p-6 space-y-6">
-                <div className="bg-neutral-50 border border-neutral-100 rounded-2xl p-4 flex items-center justify-between">
+              {/* Status Indicator & Main Content (Scrollable) */}
+              <div className="p-5 sm:p-6 space-y-6 overflow-y-auto flex-1">
+                <div className="bg-neutral-50 border border-neutral-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="relative">
+                    <div className="relative shrink-0">
                       <div className="w-3.5 h-3.5 bg-green-500 rounded-full animate-ping absolute inset-0 opacity-70"></div>
                       <div className="w-3.5 h-3.5 bg-green-500 rounded-full relative"></div>
                     </div>
@@ -735,7 +735,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
                       <p className="text-xs text-neutral-500">Sua API está habilitada e autenticada.</p>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-green-700 bg-green-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  <span className="text-xs font-bold text-green-700 bg-green-50 px-2.5 py-1 rounded-full uppercase tracking-wider w-max">
                     Conectado
                   </span>
                 </div>
@@ -911,18 +911,18 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
               </div>
 
               {/* Action Footer */}
-              <div className="bg-neutral-50 p-6 border-t border-neutral-100 flex gap-3">
+              <div className="bg-neutral-50 p-5 sm:p-6 border-t border-neutral-100 flex flex-col sm:flex-row gap-3 shrink-0">
                 <button
                   onClick={forceSync}
                   disabled={syncing}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-100 text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                  className="w-full sm:flex-1 px-4 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-100 text-sm font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <RefreshCw size={15} className={syncing ? "animate-spin" : ""} />
                   {syncing ? "Sincronizando..." : "Sincronizar Agora"}
                 </button>
                 <button
                   onClick={() => setActiveConfigId(null)}
-                  className="flex-1 px-4 py-2.5 bg-neutral-900 text-white hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-colors"
+                  className="w-full sm:flex-1 px-4 py-2.5 bg-neutral-900 text-white hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
                 >
                   Fechar Painel
                 </button>
