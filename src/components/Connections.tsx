@@ -118,9 +118,10 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
   const forceSync = () => {
     setSyncing(true);
     onSyncGoogle();
+    // Simulate sync duration
     setTimeout(() => {
       setSyncing(false);
-    }, 1500);
+    }, 2000);
   };
 
   const openSettings = (serviceId: string) => {
@@ -147,6 +148,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
   }, [accessToken]);
 
   const connectService = async (serviceId: string, isDemo = false) => {
+    console.log(`[Connections] connectService called for: ${serviceId}, status: ${connections[serviceId]}, isDemo: ${isDemo}`);
     if (serviceId === 'whatsapp') {
       setActiveTab('whatsapp');
       return;
@@ -247,20 +249,20 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
   });
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      <div className="flex justify-between items-center bg-white p-8 rounded-3xl shadow-sm border border-neutral-100">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      <div className="flex justify-between items-center bg-white p-4 sm:p-8 rounded-3xl shadow-sm border border-neutral-100 italic">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-neutral-900 mb-2">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 mb-2">
             {type === 'ads' ? 'Conexões AI Ads' : 'Conexões'}
           </h1>
-          <p className="text-neutral-500">
+          <p className="text-sm sm:text-base text-neutral-500">
             {type === 'ads' 
               ? 'Conecte suas contas de tráfego pago (Google Ads, Facebook Ads e TikTok Ads) para que nossa inteligência crie e otimize suas campanhas.'
               : 'Gerencie as integrações de APIs e interfaces que alimentam o Front Odonto AI.'
             }
           </p>
         </div>
-        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner">
+        <div className="hidden sm:flex w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl items-center justify-center shadow-inner shrink-0 self-start">
           <Link2 size={32} />
         </div>
       </div>
@@ -569,7 +571,7 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
             <QuickResponsesManager />
         </motion.div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-12">
         {integrations.map((integration, index) => {
           const status = connections[integration.id];
           const isConnected = status === 'connected';
@@ -581,38 +583,37 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              className="bg-white p-6 rounded-3xl shadow-sm border border-neutral-100 hover:shadow-md transition-shadow"
+              className="bg-white p-5 rounded-2xl shadow-sm border border-neutral-100 hover:shadow-md transition-shadow"
             >
               <div className="flex items-start gap-4">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${integration.color}`}>
-                  <integration.icon size={28} />
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${integration.color}`}>
+                  <integration.icon size={24} />
                 </div>
                 
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="text-xl font-semibold text-neutral-900 truncate">{integration.name}</h3>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
+                    <h3 className="text-lg font-semibold text-neutral-900 truncate">{integration.name}</h3>
                     {isConnected ? (
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
-                        <CheckCircle2 size={14} /> Ativo
+                      <span className="flex items-center gap-1 text-[10px] sm:text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full w-max">
+                        <CheckCircle2 size={12} /> Ativo
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 bg-neutral-100 px-2.5 py-1 rounded-full">
-                        <AlertCircle size={14} /> Inativo
+                      <span className="flex items-center gap-1 text-[10px] sm:text-xs font-medium text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full w-max">
+                        <AlertCircle size={12} /> Inativo
                       </span>
                     )}
                   </div>
                   
-                  <p className="text-sm text-neutral-500 leading-relaxed mb-6">
+                  <p className="text-xs text-neutral-500 leading-relaxed mb-4 line-clamp-2">
                     {integration.description}
                   </p>
                   
-                  <div className="flex flex-col gap-3 w-full">
-                    <div className="flex items-center gap-3 w-full">
+                  <div className="flex flex-wrap gap-2 w-full">
                       <button
                         onClick={() => connectService(integration.id, false)}
                         disabled={isConnecting}
                         className={`
-                          flex-1 px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2
+                          flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5
                           ${isConnected 
                             ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' 
                             : 'bg-neutral-900 text-white hover:bg-neutral-800'
@@ -624,44 +625,24 @@ export default function Connections({ setActiveTab, accessToken, onConnectGoogle
                           <>Conectando...</>
                         ) : integration.id === 'whatsapp' ? (
                           <>
-                            Configurar QR Code
-                            <ExternalLink size={16} />
+                            Configurar QR
+                            <ExternalLink size={12} />
                           </>
                         ) : isConnected ? (
                           (integration.id === 'agenda') ? 'Sincronizar' : 'Desconectar'
                         ) : (
-                          (integration.id === 'google' || integration.id === 'agenda') ? 'SINCRONIZAR GOOGLE' : `Conectar ${integration.name.split(' ')[0]}`
+                          (integration.id === 'google' || integration.id === 'agenda') ? 'Sincronizar' : `Conectar`
                         )}
                       </button>
                       
                       {isConnected && integration.id !== 'whatsapp' && (
                         <button 
                           onClick={() => openSettings(integration.id)}
-                          className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                          className="px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100"
                         >
-                          Configurações
+                          Config.
                         </button>
                       )}
-                      {(integration.id === 'google' || integration.id === 'agenda') && (
-                        <button 
-                          onClick={() => setShowConfigGuide(true)}
-                          className="px-4 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
-                        >
-                          Como configurar?
-                        </button>
-                      )}
-                    </div>
-
-                    {!isConnected && (integration.id === 'google' || integration.id === 'agenda') && (
-                      <button
-                        onClick={() => connectService(integration.id, true)}
-                        disabled={isConnecting}
-                        className="w-full px-4 py-1.5 border border-dashed border-indigo-200 text-indigo-600 hover:bg-indigo-50/50 rounded-xl text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Globe size={13} className="text-indigo-500" />
-                        Ativar Modo de Demonstração (Sem OAuth)
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>

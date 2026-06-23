@@ -270,7 +270,9 @@ async function connectToWhatsApp() {
       fs.mkdirSync('wa_auth', { recursive: true });
     }
     
+    debugLog("Before calling useMultiFileAuthState");
     const { state, saveCreds } = await useMultiFileAuthState('wa_auth');
+    debugLog("After calling useMultiFileAuthState");
     
     // Default version to use if fetch fails or hangs
     let version = [2, 3000, 1015901307] as [number, number, number];
