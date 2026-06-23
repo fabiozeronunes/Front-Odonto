@@ -89,8 +89,22 @@ app.get('/api/health', (req, res) => {
 
 // Rota para expor chaves do Supabase para o frontend (necessário para o app online funcionar com segredos)
 app.get('/api/config/supabase', (req, res) => {
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  // Tenta encontrar as chaves em diversas variações de nomes comuns
+  const supabaseUrl = 
+    process.env.VITE_SUPABASE_URL || 
+    process.env.SUPABASE_URL || 
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
+    
+  const supabaseAnonKey = 
+    process.env.VITE_SUPABASE_ANON_KEY || 
+    process.env.SUPABASE_ANON_KEY || 
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  
+  console.log('[API Supabase Config] Solicitação recebida do frontend.', { 
+    urlFound: !!supabaseUrl, 
+    keyFound: !!supabaseAnonKey,
+    hasEnvKeys: Object.keys(process.env).some(k => k.includes('SUPABASE'))
+  });
   
   res.json({
     url: supabaseUrl || '',

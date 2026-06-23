@@ -51,21 +51,31 @@ export async function refreshSupabaseConfig(): Promise<SupabaseConfig> {
 
   try {
     console.log('[SUPABASE CONFIG] Tentando carregar chaves via API do servidor...');
-    const response = await fetch('/api/config/supabase');
+    const timestamp = new Date().getTime();
+    const response = await fetch(`/api/config/supabase?t=${timestamp}`);
+    
+    if (!response.ok) {
+      throw new Error(`Servidor respondeu com status ${response.status}`);
+    }
+    
     const data = await response.json();
     
-    if (data.isConfigured) {
+    if (data.isConfigured && data.url && data.anonKey) {
       SUPABASE_CONFIG = {
         url: data.url,
         anonKey: data.anonKey,
         isConfigured: true,
         source: 'api',
-        debug: { ...SUPABASE_CONFIG.debug, loadedViaApi: true }
+        debug: { ...SUPABASE_CONFIG.debug, loadedViaApi: true, fetchSuccess: true }
       };
       console.log('[SUPABASE CONFIG] Chaves carregadas com sucesso via API.');
+    } else {
+      console.warn('[SUPABASE CONFIG] API respondeu mas chaves não foram encontradas no servidor.');
+      SUPABASE_CONFIG.debug.apiCalledButEmpty = true;
     }
   } catch (err) {
     console.warn('[SUPABASE CONFIG] Falha ao buscar chaves via API:', err);
+    throw err;
   }
 
   return SUPABASE_CONFIG;

@@ -8,15 +8,54 @@ export const DataDiagnostic: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [supabaseStatus, setSupabaseStatus] = useState(SUPABASE_CONFIG);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    // Tenta carregar as chaves automaticamente ao carregar o componente
+    const initConfig = async () => {
+      try {
+        const config = await refreshSupabaseConfig();
+        setSupabaseStatus(config);
+      } catch (err: any) {
+        console.warn('[DataDiagnostic] Falha no carregamento inicial da config:', err);
+        setConfigError(err.message);
+      }
+    };
+    
+    if (!supabaseStatus.isConfigured) {
+      initConfig();
+    }
+  }, []);
 
   const handleOpenToggle = async () => {
     const nextState = !isOpen;
     setIsOpen(nextState);
     
     if (nextState) {
-      // Ao abrir, tenta buscar as chaves dinamicamente do servidor se necessário
-      const updatedConfig = await refreshSupabaseConfig();
-      setSupabaseStatus(updatedConfig);
+      try {
+        const updatedConfig = await refreshSupabaseConfig();
+        setSupabaseStatus(updatedConfig);
+        setConfigError(null);
+      } catch (err: any) {
+        setConfigError(err.message);
+      }
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    setLoading(true);
+    try {
+      const config = await refreshSupabaseConfig();
+      setSupabaseStatus(config);
+      if (config.isConfigured) {
+        alert('Configuração carregada com sucesso do servidor!');
+      } else {
+        alert('O servidor ainda não retornou as chaves do Supabase. Verifique se foram configuradas nos Secrets.');
+      }
+    } catch (err: any) {
+      alert('Erro ao buscar do servidor: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -117,7 +156,7 @@ export const DataDiagnostic: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-24 left-4 md:bottom-4 md:right-4 z-[40]">
       <div className={`mb-2 bg-white border border-neutral-200 rounded-xl shadow-lg transition-all transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-90 opacity-0 pointer-events-none'}`}>
         <div className="p-4 w-64 space-y-3">
           <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Painel de Dados</p>
@@ -150,11 +189,20 @@ export const DataDiagnostic: React.FC = () => {
             )}
             
             {!supabaseStatus.isConfigured && (
-              <div className="p-2 bg-amber-50 rounded border border-amber-100 flex gap-2">
-                <AlertTriangle size={12} className="text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-[9px] text-amber-800 leading-tight">
-                  Chaves ausentes no bundle. Tentando buscar do servidor...
-                </p>
+              <div className="p-2 bg-amber-50 rounded border border-amber-100 flex flex-col gap-1">
+                <div className="flex gap-2">
+                  <AlertTriangle size={12} className="text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[9px] text-amber-800 leading-tight">
+                    Chaves ausentes no bundle. Tentando buscar do servidor...
+                    {configError && <span className="block mt-1 font-mono text-[8px] text-red-500">Erro: {configError}</span>}
+                  </p>
+                </div>
+                <button 
+                  onClick={handleManualRefresh}
+                  className="mt-1 text-[9px] bg-amber-100 hover:bg-amber-200 text-amber-700 py-1 px-2 rounded font-bold transition-colors"
+                >
+                  Tentar carregar do Servidor
+                </button>
               </div>
             )}
           </div>
