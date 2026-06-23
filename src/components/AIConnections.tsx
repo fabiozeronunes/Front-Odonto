@@ -504,10 +504,10 @@ export default function AIConnections() {
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-neutral-100 my-8"
+                className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg shadow-2xl border border-neutral-100 max-h-[90vh] flex flex-col overflow-hidden my-auto"
               >
                 {/* Header of Modal */}
-                <div className="p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
+                <div className="p-5 sm:p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50 shrink-0">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${aiData.color}`}>
                       <aiData.icon size={20} />
@@ -526,7 +526,7 @@ export default function AIConnections() {
                 </div>
 
                 {/* Content */}
-                <div className="p-6 space-y-5">
+                <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
                   {/* API Key requirement informational banner */}
                   {aiData.id !== 'ollama' && (
                     <div className="bg-blue-50/70 border border-blue-100 p-4 rounded-2xl space-y-2">
@@ -620,8 +620,8 @@ export default function AIConnections() {
                       <div className="space-y-2.5">
                         <label className={`flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all ${
                           modalModules.whatsapp 
-                            ? 'bg-blue-50/50 border-blue-200 text-blue-900 font-semibold' 
-                            : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                           ? 'bg-blue-50/50 border-blue-200 text-blue-900 font-semibold' 
+                           : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
                         }`}>
                           <div className="flex items-center gap-2.5">
                             <input
@@ -639,8 +639,8 @@ export default function AIConnections() {
 
                         <label className={`flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all ${
                           modalModules.ads 
-                            ? 'bg-blue-50/50 border-blue-200 text-blue-900 font-semibold' 
-                            : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                           ? 'bg-blue-50/50 border-blue-200 text-blue-900 font-semibold' 
+                           : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
                         }`}>
                           <div className="flex items-center gap-2.5">
                             <input
@@ -658,8 +658,8 @@ export default function AIConnections() {
 
                         <label className={`flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all ${
                           modalModules.crm 
-                            ? 'bg-blue-50/50 border-blue-200 text-blue-900 font-semibold' 
-                            : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                           ? 'bg-blue-50/50 border-blue-200 text-blue-900 font-semibold' 
+                           : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
                         }`}>
                           <div className="flex items-center gap-2.5">
                             <input
@@ -680,16 +680,16 @@ export default function AIConnections() {
                 </div>
 
                 {/* Footer and trigger actions */}
-                <div className="bg-neutral-50 px-6 py-4 border-t border-neutral-100 flex gap-3">
+                <div className="bg-neutral-50 px-5 sm:px-6 py-4 border-t border-neutral-100 flex flex-col sm:flex-row gap-3 shrink-0">
                   <button
                     onClick={handleCloseSetup}
-                    className="flex-1 text-sm font-semibold border border-neutral-300 text-neutral-700 hover:bg-neutral-100 px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+                    className="w-full sm:flex-1 text-sm font-semibold border border-neutral-300 text-neutral-700 hover:bg-neutral-100 px-4 py-2.5 rounded-xl transition-all cursor-pointer"
                   >
                     Voltar
                   </button>
                   <button
                     onClick={() => handleSaveConnection(aiData.id)}
-                    className="flex-1 text-sm font-semibold bg-neutral-900 text-white hover:bg-neutral-800 px-4 py-2.5 rounded-xl transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                    className="w-full sm:flex-1 text-sm font-semibold bg-neutral-900 text-white hover:bg-neutral-800 px-4 py-2.5 rounded-xl transition-all shadow-sm active:scale-[0.98] cursor-pointer"
                   >
                     Salvar e Ativar
                   </button>

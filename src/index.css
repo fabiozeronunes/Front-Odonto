@@ -33,18 +33,6 @@
 }
 
 @media (max-width: 640px) {
-  /* Força grid de 1 coluna em mobile */
-  .connections-page-wrapper .grid {
-    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
-  }
-
-  /* Garante que sub-grids e listas de itens pequenos (como os botões de presets) possam fluir flexíveis ou continuar inline */
-  .connections-page-wrapper .grid-cols-2,
-  .connections-page-wrapper .grid-cols-3,
-  .connections-page-wrapper .grid-cols-6 {
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)) !important;
-  }
-
   /* Tabelas ou contêineres de dados roláveis horizontalmente apenas onde necessário */
   .connections-page-wrapper table,
   .connections-page-wrapper .data-table,
