@@ -242,6 +242,7 @@ export default function WhatsAppSimulator() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'qr'>('disconnected');
+  const [diagnosticLogs, setDiagnosticLogs] = useState<string[]>([]);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [connectedUser, setConnectedUser] = useState<{ id: string; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -545,6 +546,7 @@ export default function WhatsAppSimulator() {
           data = JSON.parse(trimmed);
         } catch (e) {
           console.warn("Erro ao parsear mensagem WS:", trimmed);
+          setDiagnosticLogs(prev => [...prev, `Erro WS: ${e}`]);
           return;
         }
         
@@ -1173,16 +1175,20 @@ export default function WhatsAppSimulator() {
   };
 
   const handleConnect = async (force = false) => {
+    console.log("[WhatsApp] Iniciando conexão, chamando /api/wa-connect, force:", force);
     setConnectionStatus('connecting');
     setQrCode(null);
+    setDiagnosticLogs(["Iniciando conexão..."]);
     try {
-      await fetch('/api/wa-connect', { 
+      const response = await fetch('/api/wa-connect', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ force })
       });
+      console.log("[WhatsApp] Resposta de /api/wa-connect:", response.status);
     } catch (e) {
       console.error('Failed to initiate connection:', e);
+      setDiagnosticLogs(prev => [...prev, `Erro na conexão: ${e}`]);
     }
   };
 
@@ -1402,6 +1408,11 @@ export default function WhatsAppSimulator() {
         {/* Real-time Connection Area (Bigger QR Code & Loading) */}
         {connectionStatus !== 'connected' && (
           <div className="p-5 bg-white border-b border-neutral-200 shadow-inner flex flex-col items-center">
+            {diagnosticLogs.length > 0 && (
+              <div className="mb-4 w-full bg-black text-green-400 p-2 text-[10px] font-mono rounded overflow-auto max-h-32 text-left">
+                {diagnosticLogs.map((log, i) => <div key={i}>{log}</div>)}
+              </div>
+            )}
              {connectionStatus === 'qr' && qrCode ? (
                 <div className="flex flex-col items-center gap-4">
                   <div className="text-center space-y-1">
@@ -1442,7 +1453,7 @@ export default function WhatsAppSimulator() {
                 </div>
              ) : (
                 <button 
-                  onClick={() => handleConnect()}
+                  onClick={() => handleConnect(true)}
                   className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-neutral-300 rounded-2xl text-xs font-black text-neutral-500 uppercase tracking-widest hover:border-[#128C7E] hover:text-[#128C7E] transition-all"
                 >
                   <QrCode size={16} />

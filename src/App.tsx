@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
@@ -34,22 +34,22 @@ import { auth, signInWithGoogle, getRedirectResult, GoogleAuthProvider, db } fro
 import { doc, onSnapshot, setDoc, serverTimestamp, User, syncLegacyData } from './lib/supabaseAdapter';
 
 // Components (will be extracted)
-import Dashboard from './components/Dashboard';
-import ClinicManager from './components/ClinicManager';
-import DentistManager from './components/DentistManager';
-import CRM from './components/CRM';
-import Agenda from './components/Agenda';
-import WhatsAppSimulator from './components/WhatsAppSimulator';
-import AdGenerator from './components/AdGenerator';
-import Connections from './components/Connections';
-import AIConnections from './components/AIConnections';
-import LandingPage from './components/LandingPage';
-import LoginPage from './components/LoginPage';
-import PatientManager from './components/PatientManager';
-import ProcedureManager from './components/ProcedureManager';
-import SpecialtyManager from './components/SpecialtyManager';
-import FinancialReports from './components/FinancialReports';
-import UserRegistration from './components/UserRegistration';
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const ClinicManager = lazy(() => import('./components/ClinicManager'));
+const DentistManager = lazy(() => import('./components/DentistManager'));
+const CRM = lazy(() => import('./components/CRM'));
+const Agenda = lazy(() => import('./components/Agenda'));
+const WhatsAppSimulator = lazy(() => import('./components/WhatsAppSimulator'));
+const AdGenerator = lazy(() => import('./components/AdGenerator'));
+const Connections = lazy(() => import('./components/Connections'));
+const AIConnections = lazy(() => import('./components/AIConnections'));
+const LandingPage = lazy(() => import('./components/LandingPage'));
+const LoginPage = lazy(() => import('./components/LoginPage'));
+const PatientManager = lazy(() => import('./components/PatientManager'));
+const ProcedureManager = lazy(() => import('./components/ProcedureManager'));
+const SpecialtyManager = lazy(() => import('./components/SpecialtyManager'));
+const FinancialReports = lazy(() => import('./components/FinancialReports'));
+const UserRegistration = lazy(() => import('./components/UserRegistration'));
 import { validateSupabaseConnection } from './lib/supabaseAdapter';
 import { DataDiagnostic } from './components/DataDiagnostic';
 
@@ -683,30 +683,32 @@ export default function App() {
 
         <div className="p-4 sm:p-6 md:p-8">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              {activeTab === 'home' && <LandingPage onLogin={() => setView('login')} />}
-              {activeTab === 'dashboard' && <Dashboard onNavigate={setActiveTab} />}
-              {activeTab === 'clinics' && <ClinicManager />}
-              {activeTab === 'dentists' && <DentistManager />}
-              {activeTab === 'specialties' && <SpecialtyManager />}
-              {activeTab === 'procedures' && <ProcedureManager setActiveTab={setActiveTab} />}
-              {activeTab === 'patients' && <PatientManager />}
-              {activeTab === 'crm' && <CRM onNavigate={setActiveTab} />}
-              {activeTab === 'financial_reports' && <FinancialReports />}
-              {activeTab === 'user_registration' && <UserRegistration onComplete={() => setActiveTab('dashboard')} />}
-              {activeTab === 'agenda' && <Agenda accessToken={accessToken} onConnectGoogle={handleLogin} onNavigate={setActiveTab} onDisconnectGoogle={() => setAccessToken(null)} syncTrigger={syncTrigger} />}
-              {activeTab === 'whatsapp' && <WhatsAppSimulator />}
-              {activeTab === 'ads' && <AdGenerator />}
-              {activeTab === 'connections' && <Connections type="general" setActiveTab={setActiveTab} accessToken={accessToken} onConnectGoogle={handleLogin} onSyncGoogle={() => setSyncTrigger(prev => prev + 1)} onDisconnectGoogle={() => setAccessToken(null)} />}
-              {activeTab === 'ai_ads_connections' && <Connections type="ads" setActiveTab={setActiveTab} accessToken={accessToken} onConnectGoogle={handleLogin} onSyncGoogle={() => setSyncTrigger(prev => prev + 1)} onDisconnectGoogle={() => setAccessToken(null)} />}
-              {activeTab === 'ai_connections' && <AIConnections />}
-            </motion.div>
+            <Suspense fallback={<div className="p-8 text-center">Carregando...</div>}>
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {activeTab === 'home' && <LandingPage onLogin={() => setView('login')} />}
+                {activeTab === 'dashboard' && <Dashboard onNavigate={setActiveTab} />}
+                {activeTab === 'clinics' && <ClinicManager />}
+                {activeTab === 'dentists' && <DentistManager />}
+                {activeTab === 'specialties' && <SpecialtyManager />}
+                {activeTab === 'procedures' && <ProcedureManager setActiveTab={setActiveTab} />}
+                {activeTab === 'patients' && <PatientManager />}
+                {activeTab === 'crm' && <CRM onNavigate={setActiveTab} />}
+                {activeTab === 'financial_reports' && <FinancialReports />}
+                {activeTab === 'user_registration' && <UserRegistration onComplete={() => setActiveTab('dashboard')} />}
+                {activeTab === 'agenda' && <Agenda accessToken={accessToken} onConnectGoogle={handleLogin} onNavigate={setActiveTab} onDisconnectGoogle={() => setAccessToken(null)} syncTrigger={syncTrigger} />}
+                {activeTab === 'whatsapp' && <WhatsAppSimulator />}
+                {activeTab === 'ads' && <AdGenerator />}
+                {activeTab === 'connections' && <Connections type="general" setActiveTab={setActiveTab} accessToken={accessToken} onConnectGoogle={handleLogin} onSyncGoogle={() => setSyncTrigger(prev => prev + 1)} onDisconnectGoogle={() => setAccessToken(null)} />}
+                {activeTab === 'ai_ads_connections' && <Connections type="ads" setActiveTab={setActiveTab} accessToken={accessToken} onConnectGoogle={handleLogin} onSyncGoogle={() => setSyncTrigger(prev => prev + 1)} onDisconnectGoogle={() => setAccessToken(null)} />}
+                {activeTab === 'ai_connections' && <AIConnections />}
+              </motion.div>
+            </Suspense>
           </AnimatePresence>
         </div>
       </main>
